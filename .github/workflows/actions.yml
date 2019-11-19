@@ -28,6 +28,6 @@ jobs:
       - name: npm publish
         uses: actions/setup-node@v1
       - name: Publish
-        run: npm install --access public --ignore-scripts
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
