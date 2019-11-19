@@ -24,3 +24,9 @@ jobs:
         with:
           token: ${{secrets.CODECOV_TOKEN}}
           file: ./coverage.lcov
+        # take this to a new action on release or tagging
+      - name: Publish
+        uses: actions/setup-node@v1
+        run: npm install --access public --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

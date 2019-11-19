@@ -1,13 +1,11 @@
 {
-  "name": "analytics-node",
-  "version": "3.4.0-beta.1",
-  "description": "The hassle-free way to integrate analytics into any Node.js application",
-  "license": "MIT",
-  "repository": "segmentio/analytics-node",
+  "name": "@rudderlabs/rudder-analytics-node",
+  "version": "0.0.0",
+  "description": "Rudder Node SDK",
+  "license": "",
+  "repository": "rudderlabs/analytics-node",
   "author": {
-    "name": "Segment",
-    "email": "tools+npm@segment.com",
-    "url": "https://segment.com"
+    "name": ""
   },
   "engines": {
     "node": ">=4"
@@ -22,21 +20,13 @@
     "dependencies": "yarn",
     "size": "size-limit",
     "test": "npm run lint && nyc --reporter=lcov --reporter=html --reporter=text ava --serial --verbose  > coverage.lcov",
-    "lint": "eslint . --fix",
-    "np": "np --no-publish",
-    "release": "yarn run np"
+    "lint": "eslint . --fix"
   },
   "files": [
     "index.js"
   ],
   "keywords": [
-    "analytics",
-    "stats",
-    "segment.io",
-    "segmentio",
-    "segment",
-    "client",
-    "driver"
+    "analytics"
   ],
   "dependencies": {
     "@segment/loosely-validate-event": "^2.0.0",

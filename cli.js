@@ -9,9 +9,9 @@ const toObject = str => JSON.parse(str);
 // node cli.js -w "write-key" -h "http://localhost" -t "identify" -u 'id
 program
   .version(pkg.version)
-  .option("-w, --writeKey <key>", "the Segment write key to use")
-  .option("-h, --host <host>", "the Segment API hostname to use")
-  .option("-t, --type <type>", "the Segment message type")
+  .option("-w, --writeKey <key>", "the write key to use")
+  .option("-h, --host <host>", "the API hostname to use")
+  .option("-t, --type <type>", "the message type")
 
   .option("-u, --userId <id>", "the user id to send the event as")
   .option(

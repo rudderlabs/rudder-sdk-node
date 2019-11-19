@@ -21,7 +21,7 @@ class Analytics {
    * @param {Object} [options] (optional)
    *   @property {Number} flushAt (default: 20)
    *   @property {Number} flushInterval (default: 10000)
-   *   @property {String} host (default: 'https://api.segment.io')
+   *   @property {String} host (default: required)
    *   @property {Boolean} enable (default: true)
    */
 
