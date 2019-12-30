@@ -6,7 +6,7 @@ import auth from "basic-auth";
 import pify from "pify";
 import test from "ava";
 import Analytics from ".";
-import { version } from "./package";
+import { version } from "./package.json";
 
 const noop = () => {};
 
