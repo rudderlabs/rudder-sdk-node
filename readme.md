@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-$ npm install analytics-node
+$ npm install @rudderlabs/rudder-analytics-node
 ```
 
 ## Usage
