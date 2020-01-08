@@ -25,15 +25,15 @@ class Analytics {
    *   @property {Boolean} enable (default: true)
    */
 
-  constructor(writeKey, options) {
+  constructor(writeKey, dataPlaneURL, options) {
     options = options || {};
 
     assert(writeKey, "You must pass your project's write key.");
-    assert(options.host, "You must pass your data plane url.");
+    assert(dataPlaneURL, "You must pass your data plane url.");
 
     this.queue = [];
     this.writeKey = writeKey;
-    this.host = removeSlash(options.host);
+    this.host = removeSlash(dataPlaneURL);
     this.timeout = options.timeout || false;
     this.flushAt = Math.max(options.flushAt, 1) || 20;
     this.flushInterval = options.flushInterval || 10000;
@@ -260,6 +260,8 @@ class Analytics {
       sentAt: new Date()
     };
 
+    // console.log("===data===", data);
+
     const done = err => {
       callbacks.forEach(callback_ => {
         callback_(err);
@@ -291,9 +293,16 @@ class Analytics {
         typeof this.timeout === "string" ? ms(this.timeout) : this.timeout;
     }
 
+    // console.log("===making axios request===");
+
     axios(req)
-      .then(() => done())
+      .then(response => {
+        // handle success
+        // console.log("===success===", response);
+        done();
+      })
       .catch(err => {
+        // console.log("===err===", err);
         if (err.response) {
           const error = new Error(err.response.statusText);
           return done(error);

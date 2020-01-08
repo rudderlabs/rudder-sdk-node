@@ -1,9 +1,9 @@
 {
-  "name": "@rudderlabs/rudder-analytics-node",
-  "version": "0.0.1-alpha.1",
+  "name": "@rudderstack/rudder-sdk-node",
+  "version": "0.0.1-alpha.2",
   "description": "Rudder Node SDK",
   "license": "",
-  "repository": "rudderlabs/analytics-node",
+  "repository": "rudderlabs/rudder-sdk-node",
   "author": {
     "name": ""
   },
