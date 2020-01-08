@@ -3,13 +3,13 @@
 ## Installation
 
 ```bash
-$ npm install @rudderlabs/rudder-analytics-node
+$ npm install @rudderstack/rudder-sdk-node
 ```
 
 ## Usage
 
 ```js
-const Analytics = require("@rudderlabs/rudder-analytics-node");
+const Analytics = require("@rudderstack/rudder-sdk-node");
 
 const client = new Analytics("write key", "data-plane-uri");
 // const client = new Analytics("1S2kNlbkMrWLBO79H2eNuEST27I", "http://localhost:8080/v1/batch");
