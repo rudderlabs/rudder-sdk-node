@@ -21,9 +21,9 @@ const metadata = { nodeVersion: process.versions.node };
 const port = 4063;
 
 const createClient = options => {
-  options = { host: `http://localhost:${port}`, ...options };
+  options = { ...options };
 
-  const client = new Analytics("key", options);
+  const client = new Analytics("key", `http://localhost:${port}`, options);
   client.flush = pify(client.flush.bind(client));
   client.flushed = true;
 
@@ -85,7 +85,7 @@ test("default options", t => {
 });
 
 test("remove trailing slashes from `host`", t => {
-  const client = new Analytics("key", { host: "http://google.com///" });
+  const client = new Analytics("key", "http://google.com///");
 
   t.is(client.host, "http://google.com");
   t.is(client.writeKey, "key");
@@ -94,8 +94,7 @@ test("remove trailing slashes from `host`", t => {
 });
 
 test("overwrite defaults with options", t => {
-  const client = new Analytics("key", {
-    host: "a",
+  const client = new Analytics("key", "a", {
     flushAt: 1,
     flushInterval: 2
   });
