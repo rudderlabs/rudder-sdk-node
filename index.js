@@ -168,9 +168,7 @@ class Analytics {
       return setImmediate(callback);
     }
 
-    message = { ...message };
-    message.type = type;
-    message.context = {
+    const context = {
       library: {
         name: "analytics-node",
         version
@@ -178,22 +176,18 @@ class Analytics {
       ...message.context
     };
 
-    message._metadata = {
+    const _metadata = {
       nodeVersion: process.versions.node,
       ...message._metadata
     };
 
-    if (!message.originalTimestamp) {
-      message.originalTimestamp = new Date();
-    }
+    const originalTimestamp = message.originalTimestamp || new Date();
 
-    if (!message.messageId) {
-      // We md5 the messaage to add more randomness. This is primarily meant
-      // for use in the browser where the uuid package falls back to Math.random()
-      // which is not a great source of randomness.
-      // Borrowed from analytics.js (https://github.com/segment-integrations/analytics.js-integration-segmentio/blob/a20d2a2d222aeb3ab2a8c7e72280f1df2618440e/lib/index.js#L255-L256).
-      message.messageId = `node-${md5(JSON.stringify(message))}-${uuid()}`;
-    }
+    // We md5 the messaage to add more randomness. This is primarily meant
+    // for use in the browser where the uuid package falls back to Math.random()
+    // which is not a great source of randomness.
+    // Borrowed from analytics.js (https://github.com/segment-integrations/analytics.js-integration-segmentio/blob/a20d2a2d222aeb3ab2a8c7e72280f1df2618440e/lib/index.js#L255-L256).
+    const messageId = message.messageId || `node-${md5(JSON.stringify(message))}-${uuid()}`;
 
     // Historically this library has accepted strings and numbers as IDs.
     // However, our spec only allows strings. To avoid breaking compatibility,
@@ -204,6 +198,15 @@ class Analytics {
     if (message.userId && !isString(message.userId)) {
       message.userId = JSON.stringify(message.userId);
     }
+
+    message = {
+      ...message,
+      type,
+      context,
+      _metadata,
+      originalTimestamp,
+      messageId
+    };
 
     this.queue.push({ message, callback });
 
@@ -318,8 +321,8 @@ class Analytics {
       return true;
     }
 
+    // Cannot determine if the request can be retried
     if (!error.response) {
-      // Cannot determine if the request can be retried
       return false;
     }
 
