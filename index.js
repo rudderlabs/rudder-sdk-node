@@ -168,8 +168,18 @@ class Analytics {
       return setImmediate(callback);
     }
 
+    if (type == "identify") {
+      if (message.traits) {
+        if (!message.context) {
+          message.context = {};
+        }
+        message.context.traits = message.traits;
+      }
+    }
+
     message = { ...message };
     message.type = type;
+
     message.context = {
       library: {
         name: "analytics-node",
