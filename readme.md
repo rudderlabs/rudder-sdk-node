@@ -11,7 +11,8 @@ $ npm install @rudderstack/rudder-sdk-node
 ```js
 const Analytics = require("@rudderstack/rudder-sdk-node");
 
-const client = new Analytics("write key", "data-plane-uri");
+// we need the batch endpoint of the Rudder server you are running
+const client = new Analytics("write key", "<data-plane-uri>/v1/batch"); 
 
 client.track({
   event: "event name",
