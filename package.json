@@ -20,7 +20,8 @@
     "dependencies": "yarn",
     "size": "size-limit",
     "test": "npm run lint && nyc --reporter=lcov --reporter=html --reporter=text ava --serial --verbose  > coverage.lcov",
-    "lint": "eslint . --fix"
+    "lint": "eslint . --fix",
+    "changelog": "auto-changelog -p -t keepachangelog -u true -l false --sort-commits date-desc "
   },
   "files": [
     "index.js"
@@ -30,6 +31,7 @@
   ],
   "dependencies": {
     "@segment/loosely-validate-event": "^2.0.0",
+    "auto-changelog": "^1.16.2",
     "axios": "^0.19.0",
     "axios-retry": "^3.0.2",
     "lodash.isstring": "^4.0.1",
