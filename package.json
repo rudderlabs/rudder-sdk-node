@@ -19,14 +19,12 @@
   "scripts": {
     "dependencies": "yarn",
     "size": "size-limit",
-    "build": "babel index.js --out-dir lib",
+    "build": "babel index.js --out-dir lib && cp package.json lib/ && cp readme.md lib/ && cp CHANGELOG.md lib/&& cp History.md lib/ && cp license lib/",
     "test": "nyc --reporter=lcov --reporter=html --reporter=text ava --serial --verbose  > coverage.lcov",
     "lint": "eslint . --fix",
     "changelog": "auto-changelog -p -t keepachangelog -u true -l false --sort-commits date-desc "
   },
-  "files": [
-    "index.js"
-  ],
+  "main": "index.js",
   "keywords": [
     "analytics"
   ],
