@@ -42,13 +42,13 @@ class Analytics {
       configurable: false,
       writable: false,
       enumerable: true,
-      value: typeof options.enable === "boolean" ? options.enable : true
+      value: typeof options.enable === "boolean" ? options.enable : true,
     });
 
     axiosRetry(axios, {
       retries: options.retryCount || 3,
       retryCondition: this._isErrorRetryable,
-      retryDelay: axiosRetry.exponentialDelay
+      retryDelay: axiosRetry.exponentialDelay,
     });
   }
 
@@ -152,6 +152,25 @@ class Analytics {
   }
 
   /**
+   * Send an alias `message`.
+   *
+   * @param {Object} message
+   * @param {Function} [callback] (optional)
+   * @return {Analytics}
+   */
+
+  merge(message, callback) {
+    // explicit assert here since merge type is not supported in looselyValidate
+    assert(
+      message.anonymousId || message.userId,
+      'You must pass either an "anonymousId" or a "userId".'
+    );
+    assert(message.mergeProperties, "You must pass mergePropeties");
+    this.enqueue("merge", message, callback);
+    return this;
+  }
+
+  /**
    * Add a `message` of type `type` to the queue and
    * check whether it should be flushed.
    *
@@ -183,14 +202,14 @@ class Analytics {
     message.context = {
       library: {
         name: "analytics-node",
-        version
+        version,
       },
-      ...message.context
+      ...message.context,
     };
 
     message._metadata = {
       nodeVersion: process.versions.node,
-      ...message._metadata
+      ...message._metadata,
     };
 
     if (!message.originalTimestamp) {
@@ -256,8 +275,8 @@ class Analytics {
     }
 
     const items = this.queue.splice(0, this.flushAt);
-    const callbacks = items.map(item => item.callback);
-    const messages = items.map(item => {
+    const callbacks = items.map((item) => item.callback);
+    const messages = items.map((item) => {
       // if someone mangles directly with queue
       if (typeof item.message == "object") {
         item.message.sentAt = new Date();
@@ -267,13 +286,13 @@ class Analytics {
 
     const data = {
       batch: messages,
-      sentAt: new Date()
+      sentAt: new Date(),
     };
 
     // console.log("===data===", data);
 
-    const done = err => {
-      callbacks.forEach(callback_ => {
+    const done = (err) => {
+      callbacks.forEach((callback_) => {
         callback_(err);
       });
       callback(err, data);
@@ -292,10 +311,10 @@ class Analytics {
       method: "POST",
       url: `${this.host}`,
       auth: {
-        username: this.writeKey
+        username: this.writeKey,
       },
       data,
-      headers
+      headers,
     };
 
     if (this.timeout) {
@@ -306,12 +325,12 @@ class Analytics {
     // console.log("===making axios request===");
 
     axios(req)
-      .then(response => {
+      .then((response) => {
         // handle success
         // console.log("===success===", response);
         done();
       })
-      .catch(err => {
+      .catch((err) => {
         // console.log("===err===", err);
         if (err.response) {
           const error = new Error(err.response.statusText);
