@@ -22,4 +22,4 @@ client.track({
 
 ## Documentation
 
-Documentation is available at [https://segment.com/libraries/node](https://segment.com/libraries/node).
+Documentation is available [here](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/rudderstack-node-sdk).
