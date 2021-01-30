@@ -70,7 +70,7 @@ class Analytics {
    *    }
    * }
    * @param {*} callback
-   *  All error paths from redis and queue will give exception
+   *  All error paths from redis and queue will give exception, so they are non-retryable from SDK perspective
    *  this error callback is called when the SDK wants the user to retry
    */
   createPersistenceQueue(queueOpts, callback) {
@@ -113,6 +113,7 @@ class Analytics {
         console.log("job : " + jobData.description + " " + error);
       });
 
+      // tapping on queue events
       this.pQueue.on("completed", function(job, result) {
         let jobData = eval("(" + job.data.eventData + ")");
         result = result || "completed";
@@ -124,6 +125,8 @@ class Analytics {
         console.log("job : " + jobData.description + " is stalled...");
       });
 
+      // at startup get active job, remove it, then add it in front of queue to retried first
+      // then add the queue processor
       this.pQueue
         .getActive()
         .then(jobs => {
@@ -147,6 +150,7 @@ class Analytics {
                 );
               } else {
                 // process the job after exponential delay, if it's the 0th attempt, setTimeout will fire immediately
+                // max delay is 30 sec, it is mostly in sync with a bull queue job max lock time
                 setTimeout(function() {
                   let req = jobData.request;
                   req.data.sentAt = new Date();
@@ -551,6 +555,7 @@ class Analytics {
         callbacks: callbacks,
         attempts: 0
       };
+      // using serialize library as default JSON.stringify mangles with function/callback serialization
       this.pQueue
         .add({ eventData: serialize(eventData) })
         .then(pushedJob => {
