@@ -35,7 +35,9 @@ class Analytics {
 
     this.queue = [];
     this.pQueue = undefined;
+    this.pQueueInitialized = false;
     this.pQueueOpts = undefined;
+    this.pJobOpts = {};
     this.state = "idle";
     this.writeKey = writeKey;
     this.host = removeSlash(dataPlaneURL);
@@ -54,12 +56,102 @@ class Analytics {
     axiosRetry(axios, { retries: 0 });
   }
 
+  addPersistentQueueProcessor() {
+    const _isErrorRetryable = this._isErrorRetryable;
+    const rdone = (callbacks, err) => {
+      callbacks.forEach(callback_ => {
+        callback_(err);
+      });
+    };
+
+    const payloadQueue = this.pQueue;
+    const jobOpts = this.pJobOpts;
+
+    this.pQueue.on("failed", function(job, error) {
+      let jobData = eval("(" + job.data.eventData + ")");
+      console.log("job : " + jobData.description + " " + error);
+    });
+
+    // tapping on queue events
+    this.pQueue.on("completed", function(job, result) {
+      let jobData = eval("(" + job.data.eventData + ")");
+      result = result || "completed";
+      console.log("job : " + jobData.description + " " + result);
+    });
+
+    this.pQueue.on("stalled", function(job) {
+      let jobData = eval("(" + job.data.eventData + ")");
+      console.log("job : " + jobData.description + " is stalled...");
+    });
+
+    this.pQueue.process(function(job, done) {
+      // job failed for maxAttempts or more times, push to failed queue
+      // starting with attempt = 0
+      let maxAttempts = jobOpts.maxAttempts || 10;
+      let jobData = eval("(" + job.data.eventData + ")");
+      if (jobData.attempts >= maxAttempts) {
+        done(
+          new Error(
+            "job : " +
+              jobData.description +
+              " pushed to failed queue after attempts " +
+              jobData.attempts +
+              " skipping further retries..."
+          )
+        );
+      } else {
+        // process the job after exponential delay, if it's the 0th attempt, setTimeout will fire immediately
+        // max delay is 30 sec, it is mostly in sync with a bull queue job max lock time
+        setTimeout(function() {
+          let req = jobData.request;
+          req.data.sentAt = new Date();
+          // if request succeeded, mark the job done and move to completed
+          axios(req)
+            .then(response => {
+              rdone(jobData.callbacks);
+              done();
+            })
+            .catch(err => {
+              // check if request is retryable
+              if (_isErrorRetryable(err)) {
+                let attempts = jobData.attempts;
+                jobData.attempts = attempts + 1;
+                // increment attempt
+                // add a new job to queue in lifo
+                // if able to add, mark the earlier job done with push to completed with a msg
+                // if add to redis queue gives exception, not catching it
+                // in case of redis queue error, mark the job as failed ? i.e add the catch block in below promise ?
+                payloadQueue
+                  .add({ eventData: serialize(jobData) }, { lifo: true })
+                  .then(pushedJob => {
+                    done(
+                      null,
+                      "job : " +
+                        jobData.description +
+                        " failed for attempt " +
+                        attempts +
+                        " " +
+                        err
+                    );
+                  });
+              } else {
+                // if not retryable, mark the job failed and to failed queue for user to retry later
+                rdone(jobData.callbacks);
+                done(err);
+              }
+            });
+        }, Math.min(30000, Math.pow(2, jobData.attempts) * 1000));
+      }
+    });
+  }
+
   /**
    *
    * @param {*} queueOpts
    * {
    *    queueName: string = rudderEventsQueue,
    *    prefix: string = rudder
+   *    isMultiProcessor: booloean = false
    *    redisOpts: {
    *      port?: number = 6379;
    *      host?: string = localhost;
@@ -76,12 +168,14 @@ class Analytics {
    *  this error callback is called when the SDK wants the user to retry
    */
   createPersistenceQueue(queueOpts, callback) {
-    if (this.pQueue) {
+    if (this.pQueueInitialized) {
       console.log("a persistent queue is already initialized, skipping...");
       return;
     }
 
     this.pQueueOpts = queueOpts || {};
+    this.pQueueOpts.isMultiProcessor =
+      this.pQueueOpts.isMultiProcessor || false;
     if (!this.pQueueOpts.redisOpts) {
       throw new Error(
         "redis connection parameters not present. Cannot make a persistent queue"
@@ -92,200 +186,79 @@ class Analytics {
       redis: this.pQueueOpts.redisOpts,
       prefix: this.pQueueOpts.prefix || "rudder"
     });
+
+    console.log("isMultiProcessor" + this.pQueueOpts.isMultiProcessor);
+
     this.pQueue
       .isReady()
       .then(() => {
-        const _isErrorRetryable = this._isErrorRetryable;
-        const rdone = (callbacks, err) => {
-          callbacks.forEach(callback_ => {
-            callback_(err);
-          });
-        };
-
-        const payloadQueue = this.pQueue;
-        const jobOpts = this.pJobOpts;
-
-        this.pQueue.on("failed", function(job, error) {
-          let jobData = eval("(" + job.data.eventData + ")");
-          console.log("job : " + jobData.description + " " + error);
-        });
-
-        // tapping on queue events
-        this.pQueue.on("completed", function(job, result) {
-          let jobData = eval("(" + job.data.eventData + ")");
-          result = result || "completed";
-          console.log("job : " + jobData.description + " " + result);
-        });
-
-        this.pQueue.on("stalled", function(job) {
-          let jobData = eval("(" + job.data.eventData + ")");
-          console.log("job : " + jobData.description + " is stalled...");
-        });
         // at startup get active job, remove it, then add it in front of queue to retried first
         // then add the queue processor
-        this.pQueue
-          .getActive()
-          .then(jobs => {
-            console.log("success geting active jobs");
-            if (jobs.length == 0) {
-              console.log("there are no active jobs while starting up queue");
-              payloadQueue.process(function(job, done) {
-                // job failed for maxAttempts or more times, push to failed queue
-                // starting with attempt = 0
-                let maxAttempts = jobOpts.maxAttempts || 10;
-                let jobData = eval("(" + job.data.eventData + ")");
-                if (jobData.attempts >= maxAttempts) {
-                  done(
+        // if queue is isMultiProcessor, skip the above and add the queue processor
+        if (this.pQueueOpts.isMultiProcessor) {
+          this.addPersistentQueueProcessor();
+          this.pQueueInitialized = true;
+          callback();
+        } else {
+          this.pQueue
+            .getActive()
+            .then(jobs => {
+              console.log("success geting active jobs");
+              if (jobs.length == 0) {
+                console.log("there are no active jobs while starting up queue");
+                this.addPersistentQueueProcessor();
+                console.log("success adding process");
+                this.pQueueInitialized = true;
+                callback();
+              } else {
+                // since there is only once process, the count of active jobs will be 1 at max
+                // moving active job is important as this job doesn't have a process function
+                // and will later be retried which will mess event ordering
+                if (jobs.length > 1) {
+                  console.log(
+                    "number of active jobs at starting up queue > 1 "
+                  );
+                  callback(
                     new Error(
-                      "job : " +
-                        jobData.description +
-                        " pushed to failed queue after attempts " +
-                        jobData.attempts +
-                        " skipping further retries..."
+                      "queue has more than 1 active job, move them to failed and try again"
                     )
                   );
-                } else {
-                  // process the job after exponential delay, if it's the 0th attempt, setTimeout will fire immediately
-                  // max delay is 30 sec, it is mostly in sync with a bull queue job max lock time
-                  setTimeout(function() {
-                    let req = jobData.request;
-                    req.data.sentAt = new Date();
-                    // if request succeeded, mark the job done and move to completed
-                    axios(req)
-                      .then(response => {
-                        rdone(jobData.callbacks);
-                        done();
-                      })
-                      .catch(err => {
-                        // check if request is retryable
-                        if (_isErrorRetryable(err)) {
-                          let attempts = jobData.attempts;
-                          jobData.attempts = attempts + 1;
-                          // increment attempt
-                          // add a new job to queue in lifo
-                          // if able to add, mark the earlier job done with push to completed with a msg
-                          // if add to redis queue gives exception, not catching it
-                          // in case of redis queue error, mark the job as failed ? i.e add the catch block in below promise ?
-                          payloadQueue
-                            .add(
-                              { eventData: serialize(jobData) },
-                              { lifo: true }
-                            )
-                            .then(pushedJob => {
-                              done(
-                                null,
-                                "job : " +
-                                  jobData.description +
-                                  " failed for attempt " +
-                                  attempts +
-                                  " " +
-                                  err
-                              );
-                            });
-                        } else {
-                          // if not retryable, mark the job failed and to failed queue for user to retry later
-                          rdone(jobData.callbacks);
-                          done(err);
-                        }
-                      });
-                  }, Math.min(30000, Math.pow(2, jobData.attempts) * 1000));
+                  return;
                 }
-              });
-              console.log("success adding process");
-              callback();
-            } else {
-              // since there is only once process, the count of active jobs will be 1 at max
-              // moving active job is important as this job doesn't have a process function
-              // and will later be retried which will mess event ordering
-              if (jobs.length > 1) {
-                console.log("number of active jobs at starting up queue > 1 ");
-                callback(
-                  new Error(
-                    "queue has more than 1 active job, move them to failed and try again"
-                  )
+                console.log(
+                  "number of active jobs at starting up queue = " + jobs.length
                 );
-              }
-              console.log("number of active jobs at starting up queue =  1 ");
-              jobs.forEach(job => {
-                job
-                  .remove()
-                  .then(() => {
-                    console.log("success removed active job");
-                    let jobData = eval("(" + job.data.eventData + ")");
-                    jobData.attempts = 0;
-                    payloadQueue
-                      .add({ eventData: serialize(jobData) }, { lifo: true })
-                      .then(removedJob => {
-                        console.log("success adding removed job back to queue");
-                        payloadQueue.process(function(job, done) {
-                          let maxAttempts = jobOpts.maxAttempts || 10;
-                          let jobData = eval("(" + job.data.eventData + ")");
-                          if (jobData.attempts >= maxAttempts) {
-                            done(
-                              new Error(
-                                "job : " +
-                                  jobData.description +
-                                  " pushed to failed queue after attempts " +
-                                  jobData.attempts +
-                                  " skipping further retries..."
-                              )
-                            );
-                          } else {
-                            // process the job after exponential delay, if it's the 0th attempt, setTimeout will fire immediately
-                            setTimeout(function() {
-                              let req = jobData.request;
-                              req.data.sentAt = new Date();
-                              axios(req)
-                                .then(response => {
-                                  rdone(jobData.callbacks);
-                                  done();
-                                })
-                                .catch(err => {
-                                  if (_isErrorRetryable(err)) {
-                                    let attempts = jobData.attempts;
-                                    jobData.attempts = attempts + 1;
-                                    payloadQueue
-                                      .add(
-                                        { eventData: serialize(jobData) },
-                                        { lifo: true }
-                                      )
-                                      .then(pushedJob => {
-                                        done(
-                                          null,
-                                          "job : " +
-                                            jobData.description +
-                                            " failed for attempt " +
-                                            attempts +
-                                            " " +
-                                            err
-                                        );
-                                      });
-                                  } else {
-                                    rdone(jobData.callbacks);
-                                    done(err);
-                                  }
-                                });
-                            }, Math.min(
-                              30000,
-                              Math.pow(2, jobData.attempts) * 1000
-                            ));
-                          }
+                jobs.forEach(job => {
+                  job
+                    .remove()
+                    .then(() => {
+                      console.log("success removed active job");
+                      let jobData = eval("(" + job.data.eventData + ")");
+                      jobData.attempts = 0;
+                      payloadQueue
+                        .add({ eventData: serialize(jobData) }, { lifo: true })
+                        .then(removedJob => {
+                          console.log(
+                            "success adding removed job back to queue"
+                          );
+                          this.addPersistentQueueProcessor();
+                          console.log("success adding process");
+                          this.pQueueInitialized = true;
+                          callback();
                         });
-                        console.log("success adding process");
-                        callback();
-                      });
-                  })
-                  .catch(error => {
-                    console.log("failed to remove active job");
-                    callback(error);
-                  });
-              });
-            }
-          })
-          .catch(error => {
-            console.log("failed geting active jobs");
-            callback(error);
-          });
+                    })
+                    .catch(error => {
+                      console.log("failed to remove active job");
+                      callback(error);
+                    });
+                });
+              }
+            })
+            .catch(error => {
+              console.log("failed geting active jobs");
+              callback(error);
+            });
+        }
       })
       .catch(error => {
         console.log("queue not ready");
@@ -559,7 +532,7 @@ class Analytics {
         typeof this.timeout === "string" ? ms(this.timeout) : this.timeout;
     }
 
-    if (this.pQueue) {
+    if (this.pQueue && this.pQueueInitialized) {
       let eventData = {
         description: `node-${md5(JSON.stringify(req))}-${uuid()}`,
         request: req,
@@ -580,7 +553,7 @@ class Analytics {
           );
           throw error;
         });
-    } else {
+    } else if (!this.pQueue) {
       axios({
         ...req,
         "axios-retry": {
@@ -603,6 +576,8 @@ class Analytics {
           }
           done(err);
         });
+    } else {
+      throw new Error("persistent queue not ready");
     }
   }
 
