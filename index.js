@@ -133,10 +133,15 @@ class Analytics {
                         " " +
                         err
                     );
+                  })
+                  .catch(error => {
+                    console.log("failed to requeue job " + jobData.description);
+                    rdone(jobData.callbacks, error);
+                    done(error);
                   });
               } else {
                 // if not retryable, mark the job failed and to failed queue for user to retry later
-                rdone(jobData.callbacks);
+                rdone(jobData.callbacks, err);
                 done(err);
               }
             });
