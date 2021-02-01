@@ -42,6 +42,7 @@ class Analytics {
     this.timeout = options.timeout || false;
     this.flushAt = Math.max(options.flushAt, 1) || 20;
     this.flushInterval = options.flushInterval || 20000;
+    this.maxInternalQueueSize = options.maxInternalQueueSize || 20000;
     this.flushed = false;
     Object.defineProperty(this, "enable", {
       configurable: false,
@@ -71,6 +72,7 @@ class Analytics {
    * }
    * @param {*} callback
    *  All error paths from redis and queue will give exception, so they are non-retryable from SDK perspective
+   *  The queue may not function for unhandled promise rejections
    *  this error callback is called when the SDK wants the user to retry
    */
   createPersistenceQueue(queueOpts, callback) {
@@ -87,7 +89,7 @@ class Analytics {
       }
       this.pJobOpts = this.pQueueOpts.jobOpts || {};
       this.pQueue = new Queue(
-        this.pQueueOpts.queueName || "rudderEventsQueue6",
+        this.pQueueOpts.queueName || "rudderEventsQueue",
         {
           redis: this.pQueueOpts.redisOpts,
           prefix: this.pQueueOpts.prefix || "rudder"
@@ -124,7 +126,6 @@ class Analytics {
         let jobData = eval("(" + job.data.eventData + ")");
         console.log("job : " + jobData.description + " is stalled...");
       });
-
       // at startup get active job, remove it, then add it in front of queue to retried first
       // then add the queue processor
       this.pQueue
@@ -168,6 +169,8 @@ class Analytics {
                         // increment attempt
                         // add a new job to queue in lifo
                         // if able to add, mark the earlier job done with push to completed with a msg
+                        // if add to redis queue gives exception, not catching it
+                        // in case of redis queue error, mark the job as failed ? i.e add the catch block in below promise ?
                         payloadQueue
                           .add(
                             { eventData: serialize(jobData) },
@@ -401,6 +404,15 @@ class Analytics {
    */
 
   enqueue(type, message, callback) {
+    if (this.queue.length >= this.maxInternalQueueSize) {
+      console.log(
+        "not adding events for processing as queue size " +
+          this.queue.length +
+          " >= than max configuration " +
+          this.maxInternalQueueSize
+      );
+      return;
+    }
     callback = callback || noop;
 
     if (!this.enable) {
@@ -563,7 +575,10 @@ class Analytics {
           this.state = "idle";
         })
         .catch(error => {
-          console.log("local queue size: " + this.queue.length);
+          console.log(
+            "failed to push to redis queue, in-memory queue size: " +
+              this.queue.length
+          );
           throw error;
         });
     } else {
