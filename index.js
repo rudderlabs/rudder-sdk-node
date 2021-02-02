@@ -240,7 +240,7 @@ class Analytics {
                       console.log("success removed active job");
                       let jobData = eval("(" + job.data.eventData + ")");
                       jobData.attempts = 0;
-                      payloadQueue
+                      this.pQueue
                         .add({ eventData: serialize(jobData) }, { lifo: true })
                         .then(removedJob => {
                           console.log(
