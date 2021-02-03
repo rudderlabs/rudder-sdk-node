@@ -189,7 +189,7 @@ class Analytics {
     this.pJobOpts = this.pQueueOpts.jobOpts || {};
     this.pQueue = new Queue(this.pQueueOpts.queueName || "rudderEventsQueue", {
       redis: this.pQueueOpts.redisOpts,
-      prefix: this.pQueueOpts.prefix || "rudder"
+      prefix: "{" + this.pQueueOpts.prefix + "}" || "{rudder}"
     });
 
     console.log("isMultiProcessor" + this.pQueueOpts.isMultiProcessor);
