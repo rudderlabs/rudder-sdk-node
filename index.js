@@ -455,9 +455,9 @@ class Analytics {
       this.flush();
     }
 
-    if (this.flushInterval && !this.timer) {
-      this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
-    }
+    // if (this.flushInterval && !this.timer) {
+    //   this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
+    // }
   }
 
   /**
@@ -548,7 +548,8 @@ class Analytics {
       this.pQueue
         .add({ eventData: serialize(eventData) })
         .then(pushedJob => {
-          this.queue.splice(0, this.flushAt);
+          this.queue.splice(0, items.length);
+          this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = "idle";
         })
         .catch(error => {
@@ -568,12 +569,14 @@ class Analytics {
         }
       })
         .then(response => {
-          this.queue.splice(0, this.flushAt);
+          this.queue.splice(0, items.length);
+          this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = "idle";
           done();
         })
         .catch(err => {
-          this.queue.splice(0, this.flushAt);
+          this.queue.splice(0, items.length);
+          this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = "idle";
           if (err.response) {
             const error = new Error(err.response.statusText);
