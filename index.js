@@ -469,6 +469,7 @@ class Analytics {
 
   flush(callback) {
     // check if earlier flush was pushed to queue
+    console.log("in flush")
     if (this.state == "running") {
       return;
     }
@@ -548,11 +549,14 @@ class Analytics {
       this.pQueue
         .add({ eventData: serialize(eventData) })
         .then(pushedJob => {
+          console.log("pushed job to queue")
           this.queue.splice(0, items.length);
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = "idle";
         })
         .catch(error => {
+          this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
+          this.state = "idle";
           console.log(
             "failed to push to redis queue, in-memory queue size: " +
               this.queue.length
@@ -590,6 +594,7 @@ class Analytics {
   }
 
   _isErrorRetryable(error) {
+    
     // Retry Network Errors.
     if (axiosRetry.isNetworkError(error)) {
       return true;
@@ -600,6 +605,7 @@ class Analytics {
       return false;
     }
 
+    console.log("error status: " + error.response.status);
     // Retry Server Errors (5xx).
     if (error.response.status >= 500 && error.response.status <= 599) {
       return true;
