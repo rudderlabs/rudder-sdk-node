@@ -471,12 +471,14 @@ class Analytics {
     // check if earlier flush was pushed to queue
     console.log("in flush")
     if (this.state == "running") {
+      console.log("skipping flush, earlier flush in progress")
       return;
     }
     this.state = "running";
     callback = callback || noop;
 
     if (!this.enable) {
+      this.state = "idle";
       return setImmediate(callback);
     }
 
@@ -486,6 +488,7 @@ class Analytics {
     }
 
     if (!this.queue.length) {
+      this.state = "idle";
       return setImmediate(callback);
     }
 
