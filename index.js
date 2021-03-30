@@ -452,6 +452,7 @@ class Analytics {
     }
 
     if (this.queue.length >= this.flushAt) {
+      console.log("flushAt reached, trying flush...");
       this.flush();
     }
 
@@ -469,9 +470,9 @@ class Analytics {
 
   flush(callback) {
     // check if earlier flush was pushed to queue
-    console.log("in flush")
+    console.log("in flush");
     if (this.state == "running") {
-      console.log("skipping flush, earlier flush in progress")
+      console.log("skipping flush, earlier flush in progress");
       return;
     }
     this.state = "running";
@@ -488,6 +489,7 @@ class Analytics {
     }
 
     if (!this.queue.length) {
+      console.log("queue is empty, nothing to flush");
       this.state = "idle";
       return setImmediate(callback);
     }
@@ -552,7 +554,7 @@ class Analytics {
       this.pQueue
         .add({ eventData: serialize(eventData) })
         .then(pushedJob => {
-          console.log("pushed job to queue")
+          console.log("pushed job to queue");
           this.queue.splice(0, items.length);
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = "idle";
@@ -582,6 +584,11 @@ class Analytics {
           done();
         })
         .catch(err => {
+          console.log(
+            "got error while attempting send for 3 times, dropping " +
+              items.length +
+              " events"
+          );
           this.queue.splice(0, items.length);
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = "idle";
@@ -597,7 +604,6 @@ class Analytics {
   }
 
   _isErrorRetryable(error) {
-    
     // Retry Network Errors.
     if (axiosRetry.isNetworkError(error)) {
       return true;
