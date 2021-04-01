@@ -39,7 +39,8 @@
     "ms": "^2.0.0",
     "remove-trailing-slash": "^0.1.0",
     "serialize-javascript": "^5.0.1",
-    "uuid": "^3.2.1"
+    "uuid": "^3.2.1",
+    "winston": "^3.3.3"
   },
   "devDependencies": {
     "ava": "^0.25.0",
