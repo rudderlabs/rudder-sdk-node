@@ -10,6 +10,12 @@ const uuid = require("uuid/v4");
 const md5 = require("md5");
 const isString = require("lodash.isstring");
 const version = require("./package.json").version;
+const winston = require("winston");
+const logFormat = winston.format.printf(
+  ({ level, message, label, timestamp }) => {
+    return `${timestamp} [${label}] ${level}: ${message}`;
+  }
+);
 
 const setImmediate = global.setImmediate || process.nextTick.bind(process);
 const noop = () => {};
@@ -45,12 +51,23 @@ class Analytics {
     this.flushAt = Math.max(options.flushAt, 1) || 20;
     this.flushInterval = options.flushInterval || 20000;
     this.maxInternalQueueSize = options.maxInternalQueueSize || 20000;
+    this.logLevel = options.logLevel || "info";
     this.flushed = false;
     Object.defineProperty(this, "enable", {
       configurable: false,
       writable: false,
       enumerable: true,
       value: typeof options.enable === "boolean" ? options.enable : true
+    });
+
+    this.logger = winston.createLogger({
+      level: this.logLevel,
+      format: winston.format.combine(
+        winston.format.label({ label: "Rudder" }),
+        winston.format.timestamp(),
+        logFormat
+      ),
+      transports: [new winston.transports.Console()]
     });
 
     axiosRetry(axios, { retries: 0 });
@@ -192,7 +209,7 @@ class Analytics {
       prefix: "{" + this.pQueueOpts.prefix + "}" || "{rudder}"
     });
 
-    console.log("isMultiProcessor" + this.pQueueOpts.isMultiProcessor);
+    console.log("isMultiProcessor: " + this.pQueueOpts.isMultiProcessor);
 
     this.pQueue
       .isReady()
@@ -276,8 +293,8 @@ class Analytics {
       looselyValidate(message, type);
     } catch (e) {
       if (e.message === "Your message must be < 32kb.") {
-        console.log(
-          "Your message must be < 32kb. This is currently surfaced as a warning to allow clients to update. Versions released after August 1, 2018 will throw an error instead. Please update your code before then.",
+        this.logger.info(
+          "Your message must be < 32kb. This is currently surfaced as a warning. Please update your code",
           message
         );
         return;
@@ -382,7 +399,7 @@ class Analytics {
 
   enqueue(type, message, callback) {
     if (this.queue.length >= this.maxInternalQueueSize) {
-      console.log(
+      this.logger.error(
         "not adding events for processing as queue size " +
           this.queue.length +
           " >= than max configuration " +
@@ -452,13 +469,14 @@ class Analytics {
     }
 
     if (this.queue.length >= this.flushAt) {
-      console.log("flushAt reached, trying flush...");
+      this.logger.debug("flushAt reached, trying flush...");
       this.flush();
     }
 
-    // if (this.flushInterval && !this.timer) {
-    //   this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
-    // }
+    if (this.flushInterval && !this.flushTimer) {
+      this.logger.debug("no existing flush timer, creating new one");
+      this.flushTimer = setTimeout(this.flush.bind(this), this.flushInterval);
+    }
   }
 
   /**
@@ -470,9 +488,9 @@ class Analytics {
 
   flush(callback) {
     // check if earlier flush was pushed to queue
-    console.log("in flush");
+    this.logger.debug("in flush");
     if (this.state == "running") {
-      console.log("skipping flush, earlier flush in progress");
+      this.logger.debug("skipping flush, earlier flush in progress");
       return;
     }
     this.state = "running";
@@ -484,19 +502,25 @@ class Analytics {
     }
 
     if (this.timer) {
+      this.logger.debug("cancelling existing timer...");
       clearTimeout(this.timer);
       this.timer = null;
     }
 
+    if (this.flushTimer) {
+      this.logger.debug("cancelling existing flushTimer...");
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+
     if (!this.queue.length) {
-      console.log("queue is empty, nothing to flush");
+      this.logger.debug("queue is empty, nothing to flush");
       this.state = "idle";
       return setImmediate(callback);
     }
 
     const items = this.queue.slice(0, this.flushAt);
     const callbacks = items.map(item => item.callback);
-    //console.log("callbacks:: " + callbacks);
     const messages = items.map(item => {
       // if someone mangles directly with queue
       if (typeof item.message == "object") {
@@ -509,8 +533,8 @@ class Analytics {
       batch: messages,
       sentAt: new Date()
     };
-
-    // console.log("===data===", data);
+    this.logger.debug("batch size is " + items.length);
+    this.logger.silly("===data===", data);
 
     const done = err => {
       callbacks.forEach(callback_ => {
@@ -554,7 +578,7 @@ class Analytics {
       this.pQueue
         .add({ eventData: serialize(eventData) })
         .then(pushedJob => {
-          console.log("pushed job to queue");
+          this.logger.debug("pushed job to queue");
           this.queue.splice(0, items.length);
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = "idle";
@@ -562,7 +586,7 @@ class Analytics {
         .catch(error => {
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = "idle";
-          console.log(
+          this.logger.error(
             "failed to push to redis queue, in-memory queue size: " +
               this.queue.length
           );
@@ -584,7 +608,7 @@ class Analytics {
           done();
         })
         .catch(err => {
-          console.log(
+          this.logger.error(
             "got error while attempting send for 3 times, dropping " +
               items.length +
               " events"

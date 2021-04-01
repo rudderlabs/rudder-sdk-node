@@ -19,7 +19,7 @@
   "scripts": {
     "dependencies": "yarn",
     "size": "size-limit",
-    "build": "babel index.js --out-dir lib && cp package.json lib/ && cp readme.md lib/ && cp History.md lib/ && cp license lib/",
+    "build": "babel index.js --out-dir lib && cp package.json lib/ && cp readme.md lib/ && cp History.md lib/ && cp LICENSE.md lib/",
     "test": "nyc --reporter=lcov --reporter=html --reporter=text ava --serial --verbose  > coverage.lcov",
     "lint": "eslint . --fix",
     "changelog": "auto-changelog -p -t keepachangelog -u true -l false --sort-commits date-desc "
@@ -39,7 +39,8 @@
     "ms": "^2.0.0",
     "remove-trailing-slash": "^0.1.0",
     "serialize-javascript": "^5.0.1",
-    "uuid": "^3.2.1"
+    "uuid": "^3.2.1",
+    "winston": "^3.3.3"
   },
   "devDependencies": {
     "ava": "^0.25.0",
