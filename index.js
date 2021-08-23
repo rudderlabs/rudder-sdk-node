@@ -26,11 +26,12 @@ class Analytics {
    * optional dictionary of `options`.
    *
    * @param {String} writeKey
-   * @param {Object} [options] (optional)
-   *   @property {Number} flushAt (default: 20)
-   *   @property {Number} flushInterval (default: 10000)
-   *   @property {String} host (default: required)
-   *   @property {Boolean} enable (default: true)
+   * @param {String} dataPlaneURL
+   * @param {Object=} options (optional)
+   * @param {Number=20} options.flushAt (default: 20)
+   * @param {Number=20000} options.flushInterval (default: 20000)
+   * @param {Boolean=true} options.enable (default: true)
+   * @param {Number=20000} options.maxInternalQueueSize
    */
 
   constructor(writeKey, dataPlaneURL, options) {
@@ -57,7 +58,7 @@ class Analytics {
       configurable: false,
       writable: false,
       enumerable: true,
-      value: typeof options.enable === "boolean" ? options.enable : true
+      value: typeof options.enable === "boolean" ? options.enable : true,
     });
 
     this.logger = winston.createLogger({
@@ -67,7 +68,7 @@ class Analytics {
         winston.format.timestamp(),
         logFormat
       ),
-      transports: [new winston.transports.Console()]
+      transports: [new winston.transports.Console()],
     });
 
     axiosRetry(axios, { retries: 0 });
@@ -76,7 +77,7 @@ class Analytics {
   addPersistentQueueProcessor() {
     const _isErrorRetryable = this._isErrorRetryable;
     const rdone = (callbacks, err) => {
-      callbacks.forEach(callback_ => {
+      callbacks.forEach((callback_) => {
         callback_(err);
       });
     };
@@ -124,11 +125,11 @@ class Analytics {
           req.data.sentAt = new Date();
           // if request succeeded, mark the job done and move to completed
           axios(req)
-            .then(response => {
+            .then((response) => {
               rdone(jobData.callbacks);
               done();
             })
-            .catch(err => {
+            .catch((err) => {
               // check if request is retryable
               if (_isErrorRetryable(err)) {
                 let attempts = jobData.attempts;
@@ -140,7 +141,7 @@ class Analytics {
                 // in case of redis queue error, mark the job as failed ? i.e add the catch block in below promise ?
                 payloadQueue
                   .add({ eventData: serialize(jobData) }, { lifo: true })
-                  .then(pushedJob => {
+                  .then((pushedJob) => {
                     done(
                       null,
                       "job : " +
@@ -151,7 +152,7 @@ class Analytics {
                         err
                     );
                   })
-                  .catch(error => {
+                  .catch((error) => {
                     console.log("failed to requeue job " + jobData.description);
                     rdone(jobData.callbacks, error);
                     done(error);
@@ -169,7 +170,17 @@ class Analytics {
 
   /**
    *
-   * @param {*} queueOpts
+   * @param {Object} queueOpts
+   * @param {String=} queueOpts.queueName
+   * @param {String=} queueOpts.prefix
+   * @param {Boolean=} queueOpts.isMultiProcessor
+   * @param {Object} queueOpts.redisOpts
+   * @param {Number=} queueOpts.redisOpts.port
+   * @param {String=} queueOpts.redisOpts.host
+   * @param {Number=} queueOpts.redisOpts.db
+   * @param {String=} queueOpts.redisOpts.password
+   * @param {Object=} queueOpts.jobOpts
+   * @param {Number} queueOpts.jobOpts.maxAttempts
    * {
    *    queueName: string = rudderEventsQueue,
    *    prefix: string = rudder
@@ -206,7 +217,7 @@ class Analytics {
     this.pJobOpts = this.pQueueOpts.jobOpts || {};
     this.pQueue = new Queue(this.pQueueOpts.queueName || "rudderEventsQueue", {
       redis: this.pQueueOpts.redisOpts,
-      prefix: "{" + this.pQueueOpts.prefix + "}" || "{rudder}"
+      prefix: "{" + this.pQueueOpts.prefix + "}" || "{rudder}",
     });
 
     console.log("isMultiProcessor: " + this.pQueueOpts.isMultiProcessor);
@@ -224,7 +235,7 @@ class Analytics {
         } else {
           this.pQueue
             .getActive()
-            .then(jobs => {
+            .then((jobs) => {
               console.log("success geting active jobs");
               if (jobs.length == 0) {
                 console.log("there are no active jobs while starting up queue");
@@ -250,7 +261,7 @@ class Analytics {
                 console.log(
                   "number of active jobs at starting up queue = " + jobs.length
                 );
-                jobs.forEach(job => {
+                jobs.forEach((job) => {
                   job
                     .remove()
                     .then(() => {
@@ -259,7 +270,7 @@ class Analytics {
                       jobData.attempts = 0;
                       this.pQueue
                         .add({ eventData: serialize(jobData) }, { lifo: true })
-                        .then(removedJob => {
+                        .then((removedJob) => {
                           console.log(
                             "success adding removed job back to queue"
                           );
@@ -269,20 +280,20 @@ class Analytics {
                           callback();
                         });
                     })
-                    .catch(error => {
+                    .catch((error) => {
                       console.log("failed to remove active job");
                       callback(error);
                     });
                 });
               }
             })
-            .catch(error => {
+            .catch((error) => {
               console.log("failed geting active jobs");
               callback(error);
             });
         }
       })
-      .catch(error => {
+      .catch((error) => {
         console.log("queue not ready");
         callback(error);
       });
@@ -307,7 +318,13 @@ class Analytics {
    * Send an identify `message`.
    *
    * @param {Object} message
-   * @param {Function} [callback] (optional)
+   * @param {String=} message.userId (optional)
+   * @param {String=} message.anonymousId (optional)
+   * @param {Object=} message.context (optional)
+   * @param {Object=} message.traits (optional)
+   * @param {Object=} message.integrations (optional)
+   * @param {Date=} message.timestamp (optional)
+   * @param {Function=} callback (optional)
    * @return {Analytics}
    */
 
@@ -321,7 +338,14 @@ class Analytics {
    * Send a group `message`.
    *
    * @param {Object} message
-   * @param {Function} [callback] (optional)
+   * @param {String} message.groupId
+   * @param {String=} message.userId (optional)
+   * @param {String=} message.anonymousId (optional)
+   * @param {Object=} message.context (optional)
+   * @param {Object=} message.traits (optional)
+   * @param {Object=} message.integrations (optional)
+   * @param {Date=} message.timestamp (optional)
+   * @param {Function=} callback (optional)
    * @return {Analytics}
    */
 
@@ -335,7 +359,14 @@ class Analytics {
    * Send a track `message`.
    *
    * @param {Object} message
-   * @param {Function} [callback] (optional)
+   * @param {String} message.event
+   * @param {String=} message.userId (optional)
+   * @param {String=} message.anonymousId (optional)
+   * @param {Object=} message.context (optional)
+   * @param {Object=} message.properties (optional)
+   * @param {Object=} message.integrations (optional)
+   * @param {Date=} message.timestamp (optional)
+   * @param {Function=} callback (optional)
    * @return {Analytics}
    */
 
@@ -349,7 +380,14 @@ class Analytics {
    * Send a page `message`.
    *
    * @param {Object} message
-   * @param {Function} [callback] (optional)
+   * @param {String} message.name
+   * @param {String=} message.userId (optional)
+   * @param {String=} message.anonymousId (optional)
+   * @param {Object=} message.context (optional)
+   * @param {Object=} message.properties (optional)
+   * @param {Object=} message.integrations (optional)
+   * @param {Date=} message.timestamp (optional)
+   * @param {Function=} callback (optional)
    * @return {Analytics}
    */
 
@@ -377,7 +415,14 @@ class Analytics {
    * Send an alias `message`.
    *
    * @param {Object} message
-   * @param {Function} [callback] (optional)
+   * @param {String} message.previousId
+   * @param {String=} message.userId (optional)
+   * @param {String=} message.anonymousId (optional)
+   * @param {Object=} message.context (optional)
+   * @param {Object=} message.properties (optional)
+   * @param {Object=} message.integrations (optional)
+   * @param {Date=} message.timestamp (optional)
+   * @param {Function=} callback (optional)
    * @return {Analytics}
    */
 
@@ -428,14 +473,14 @@ class Analytics {
     message.context = {
       library: {
         name: "analytics-node",
-        version
+        version,
       },
-      ...message.context
+      ...message.context,
     };
 
     message._metadata = {
       nodeVersion: process.versions.node,
-      ...message._metadata
+      ...message._metadata,
     };
 
     if (!message.originalTimestamp) {
@@ -520,8 +565,8 @@ class Analytics {
     }
 
     const items = this.queue.slice(0, this.flushAt);
-    const callbacks = items.map(item => item.callback);
-    const messages = items.map(item => {
+    const callbacks = items.map((item) => item.callback);
+    const messages = items.map((item) => {
       // if someone mangles directly with queue
       if (typeof item.message == "object") {
         item.message.sentAt = new Date();
@@ -531,13 +576,13 @@ class Analytics {
 
     const data = {
       batch: messages,
-      sentAt: new Date()
+      sentAt: new Date(),
     };
     this.logger.debug("batch size is " + items.length);
     this.logger.silly("===data===", data);
 
-    const done = err => {
-      callbacks.forEach(callback_ => {
+    const done = (err) => {
+      callbacks.forEach((callback_) => {
         callback_(err);
       });
       callback(err, data);
@@ -556,10 +601,10 @@ class Analytics {
       method: "POST",
       url: `${this.host}`,
       auth: {
-        username: this.writeKey
+        username: this.writeKey,
       },
       data,
-      headers
+      headers,
     };
 
     if (this.timeout) {
@@ -572,18 +617,18 @@ class Analytics {
         description: `node-${md5(JSON.stringify(req))}-${uuid()}`,
         request: req,
         callbacks: callbacks,
-        attempts: 0
+        attempts: 0,
       };
       // using serialize library as default JSON.stringify mangles with function/callback serialization
       this.pQueue
         .add({ eventData: serialize(eventData) })
-        .then(pushedJob => {
+        .then((pushedJob) => {
           this.logger.debug("pushed job to queue");
           this.queue.splice(0, items.length);
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = "idle";
         })
-        .catch(error => {
+        .catch((error) => {
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = "idle";
           this.logger.error(
@@ -598,16 +643,16 @@ class Analytics {
         "axios-retry": {
           retries: 3,
           retryCondition: this._isErrorRetryable,
-          retryDelay: axiosRetry.exponentialDelay
-        }
+          retryDelay: axiosRetry.exponentialDelay,
+        },
       })
-        .then(response => {
+        .then((response) => {
           this.queue.splice(0, items.length);
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = "idle";
           done();
         })
-        .catch(err => {
+        .catch((err) => {
           this.logger.error(
             "got error while attempting send for 3 times, dropping " +
               items.length +

@@ -1,6 +1,6 @@
 {
   "name": "@rudderstack/rudder-sdk-node",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Rudder Node SDK",
   "license": "",
   "repository": "rudderlabs/rudder-sdk-node",
@@ -22,7 +22,8 @@
     "build": "babel index.js --out-dir lib && cp package.json lib/ && cp readme.md lib/ && cp History.md lib/ && cp LICENSE.md lib/",
     "test": "nyc --reporter=lcov --reporter=html --reporter=text ava --serial --verbose  > coverage.lcov",
     "lint": "eslint . --fix",
-    "changelog": "auto-changelog -p -t keepachangelog -u true -l false --sort-commits date-desc "
+    "changelog": "auto-changelog -p -t keepachangelog -u true -l false --sort-commits date-desc ",
+    "tsc": "tsc"
   },
   "main": "index.js",
   "keywords": [
@@ -71,6 +72,7 @@
     "sinon": "^7.3.2",
     "size-limit": "^1.3.5",
     "snyk": "^1.171.1",
-    "standard": "^12.0.1"
+    "standard": "^12.0.1",
+    "typescript": "^4.3.5"
   }
 }
