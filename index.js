@@ -9,8 +9,10 @@ const ms = require("ms");
 const uuid = require("uuid/v4");
 const md5 = require("md5");
 const isString = require("lodash.isstring");
-const version = require("./package.json").version;
+const cloneDeep = require("lodash.clonedeep");
 const winston = require("winston");
+const version = require("./package.json").version;
+
 const logFormat = winston.format.printf(
   ({ level, message, label, timestamp }) => {
     return `${timestamp} [${label}] ${level}: ${message}`;
@@ -452,6 +454,9 @@ class Analytics {
       );
       return;
     }
+    // Clone the incoming message object
+    // before altering the data
+    let lMessage = cloneDeep(message);
     callback = callback || noop;
 
     if (!this.enable) {
@@ -459,53 +464,53 @@ class Analytics {
     }
 
     if (type == "identify") {
-      if (message.traits) {
-        if (!message.context) {
-          message.context = {};
+      if (lMessage.traits) {
+        if (!lMessage.context) {
+          lMessage.context = {};
         }
-        message.context.traits = message.traits;
+        lMessage.context.traits = lMessage.traits;
       }
     }
 
-    message = { ...message };
-    message.type = type;
+    lMessage = { ...lMessage };
+    lMessage.type = type;
 
-    message.context = {
+    lMessage.context = {
       library: {
         name: "analytics-node",
         version,
       },
-      ...message.context,
+      ...lMessage.context,
     };
 
-    message._metadata = {
+    lMessage._metadata = {
       nodeVersion: process.versions.node,
-      ...message._metadata,
+      ...lMessage._metadata,
     };
 
-    if (!message.originalTimestamp) {
-      message.originalTimestamp = new Date();
+    if (!lMessage.originalTimestamp) {
+      lMessage.originalTimestamp = new Date();
     }
 
-    if (!message.messageId) {
+    if (!lMessage.messageId) {
       // We md5 the messaage to add more randomness. This is primarily meant
       // for use in the browser where the uuid package falls back to Math.random()
       // which is not a great source of randomness.
       // Borrowed from analytics.js (https://github.com/segment-integrations/analytics.js-integration-segmentio/blob/a20d2a2d222aeb3ab2a8c7e72280f1df2618440e/lib/index.js#L255-L256).
-      message.messageId = `node-${md5(JSON.stringify(message))}-${uuid()}`;
+      lMessage.messageId = `node-${md5(JSON.stringify(lMessage))}-${uuid()}`;
     }
 
     // Historically this library has accepted strings and numbers as IDs.
     // However, our spec only allows strings. To avoid breaking compatibility,
     // we'll coerce these to strings if they aren't already.
-    if (message.anonymousId && !isString(message.anonymousId)) {
-      message.anonymousId = JSON.stringify(message.anonymousId);
+    if (lMessage.anonymousId && !isString(lMessage.anonymousId)) {
+      lMessage.anonymousId = JSON.stringify(lMessage.anonymousId);
     }
-    if (message.userId && !isString(message.userId)) {
-      message.userId = JSON.stringify(message.userId);
+    if (lMessage.userId && !isString(lMessage.userId)) {
+      lMessage.userId = JSON.stringify(lMessage.userId);
     }
 
-    this.queue.push({ message, callback });
+    this.queue.push({ message: lMessage, callback });
 
     if (!this.flushed) {
       this.flushed = true;

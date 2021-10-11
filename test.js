@@ -90,7 +90,7 @@ test("remove trailing slashes from `host`", t => {
   t.is(client.host, "http://google.com");
   t.is(client.writeKey, "key");
   t.is(client.flushAt, 20);
-  t.is(client.flushInterval, 10000);
+  t.is(client.flushInterval, 20000);
 });
 
 test("overwrite defaults with options", t => {
