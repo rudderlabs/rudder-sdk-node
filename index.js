@@ -6,7 +6,7 @@ const Queue = require("bull");
 const axios = require("axios");
 const axiosRetry = require("axios-retry");
 const ms = require("ms");
-const uuid = require("uuid/v4");
+const { v4: uuidv4 } = require("uuid");
 const md5 = require("md5");
 const isString = require("lodash.isstring");
 const cloneDeep = require("lodash.clonedeep");
@@ -497,7 +497,7 @@ class Analytics {
       // for use in the browser where the uuid package falls back to Math.random()
       // which is not a great source of randomness.
       // Borrowed from analytics.js (https://github.com/segment-integrations/analytics.js-integration-segmentio/blob/a20d2a2d222aeb3ab2a8c7e72280f1df2618440e/lib/index.js#L255-L256).
-      lMessage.messageId = `node-${md5(JSON.stringify(lMessage))}-${uuid()}`;
+      lMessage.messageId = `node-${md5(JSON.stringify(lMessage))}-${uuidv4()}`;
     }
 
     // Historically this library has accepted strings and numbers as IDs.
@@ -619,7 +619,7 @@ class Analytics {
 
     if (this.pQueue && this.pQueueInitialized) {
       let eventData = {
-        description: `node-${md5(JSON.stringify(req))}-${uuid()}`,
+        description: `node-${md5(JSON.stringify(req))}-${uuidv4()}`,
         request: req,
         callbacks: callbacks,
         attempts: 0,
