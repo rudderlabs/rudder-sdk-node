@@ -1,6 +1,6 @@
 {
   "name": "@rudderstack/rudder-sdk-node",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Rudder Node SDK",
   "license": "",
   "repository": "rudderlabs/rudder-sdk-node",
@@ -35,13 +35,13 @@
     "axios": "^0.21.1",
     "axios-retry": "^3.0.2",
     "bull": "^3.20.0",
-    "lodash.isstring": "^4.0.1",
     "lodash.clonedeep": "^4.5.0",
+    "lodash.isstring": "^4.0.1",
     "md5": "^2.2.1",
     "ms": "^2.0.0",
     "remove-trailing-slash": "^0.1.0",
     "serialize-javascript": "^5.0.1",
-    "uuid": "^3.2.1",
+    "uuid": "^8.3.2",
     "winston": "^3.3.3"
   },
   "devDependencies": {
