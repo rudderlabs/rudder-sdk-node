@@ -1,6 +1,6 @@
 {
   "name": "@rudderstack/rudder-sdk-node",
-  "version": "1.0.4",
+  "version": "1.0.6",
   "description": "Rudder Node SDK",
   "license": "",
   "repository": "rudderlabs/rudder-sdk-node",
@@ -41,7 +41,7 @@
     "ms": "^2.0.0",
     "remove-trailing-slash": "^0.1.0",
     "serialize-javascript": "^5.0.1",
-    "uuid": "^3.2.1",
+    "uuid": "^8.3.2",
     "winston": "^3.3.3"
   },
   "devDependencies": {
