@@ -32,7 +32,7 @@
   "dependencies": {
     "@segment/loosely-validate-event": "^2.0.0",
     "auto-changelog": "^1.16.2",
-    "axios": "^0.21.1",
+    "axios": "0.21.2",
     "axios-retry": "^3.0.2",
     "bull": "^3.20.0",
     "lodash.clonedeep": "^4.5.0",
