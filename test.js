@@ -293,32 +293,6 @@ test("flush - don't fail when queue is empty", async (t) => {
   await t.notThrows(client.flush());
 });
 
-// test("flush - send messages", async (t) => {
-//   const client = createClient({ flushAt: 2 });
-//   // client.flushed = false;
-
-//   const callbackA = spy();
-//   const callbackB = spy();
-//   // const callbackC = spy();
-
-//   client.queue = [];
-//   client.identify({ userId: "id", traits: { traitOne: "a1" } }, callbackA);
-//   client.page({ userId: "id", category: "category", name: "b1" }, callbackB);
-//   // client.track({ userId: "id", event: "c1" }, callbackC);
-
-//   const data = await client.flush();
-//   console.log(data);
-//   t.deepEqual(Object.keys(data), ["batch", "sentAt"]);
-//   var keys = Object.keys(data.batch[0]);
-//   t.true(keys.includes("originalTimestamp"));
-//   t.true(keys.includes("sentAt"));
-//   t.true(data.sentAt instanceof Date);
-//   // the below is erractic behaviour, need to check?
-//   // t.true(callbackA.calledOnce)
-//   // t.true(callbackB.calledOnce)
-//   // t.true(callbackC.called)
-// });
-
 test("flush - respond with an error", async (t) => {
   const client = createClient();
   const callback = spy();
