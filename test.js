@@ -1,5 +1,5 @@
 import { spy, stub } from "sinon";
-import bodyParser from "body-parser";
+// import bodyParser from "body-parser";
 import express from "express";
 import delay from "delay";
 import auth from "basic-auth";
@@ -13,46 +13,47 @@ const noop = () => {};
 const context = {
   library: {
     name: "analytics-node",
-    version
-  }
+    version,
+  },
 };
 
 const metadata = { nodeVersion: process.versions.node };
 const port = 4063;
 
-const createClient = options => {
+const createClient = (options) => {
   options = { ...options };
 
   const client = new Analytics("key", `http://localhost:${port}`, options);
+  // const client = new Analytics("key", `http://localhost:${port}`, options);
   client.flush = pify(client.flush.bind(client));
   client.flushed = true;
 
   return client;
 };
 
-test.before.cb(t => {
+test.before.cb((t) => {
   express()
-    .use(bodyParser.json())
+    .use(express.json())
     .post("/", (req, res) => {
       const batch = req.body.batch;
 
       const { name: writeKey } = auth(req);
       if (!writeKey) {
         return res.status(400).json({
-          error: { message: "missing write key" }
+          error: { message: "missing write key" },
         });
       }
 
       const ua = req.headers["user-agent"];
       if (ua !== `analytics-node/${version}`) {
         return res.status(400).json({
-          error: { message: "invalid user-agent" }
+          error: { message: "invalid user-agent" },
         });
       }
 
       if (batch[0] === "error") {
         return res.status(400).json({
-          error: { message: "error" }
+          error: { message: "error" },
         });
       }
 
@@ -60,31 +61,31 @@ test.before.cb(t => {
         return setTimeout(() => res.end(), 5000);
       }
 
-      // console.log('=== response===', JSON.stringify(req.body))
+      // console.log("=== response===", JSON.stringify(req.body));
       res.json(req.body);
     })
     .listen(port, t.end);
 });
 
-test("expose a constructor", t => {
+test("expose a constructor", (t) => {
   t.is(typeof Analytics, "function");
 });
 
-test("require a write key", t => {
+test("require a write key", (t) => {
   t.throws(() => new Analytics(), "You must pass your project's write key.");
 });
 
-test("create a queue", t => {
+test("create a queue", (t) => {
   const client = createClient();
 
   t.deepEqual(client.queue, []);
 });
 
-test("default options", t => {
+test("default options", (t) => {
   t.throws(() => new Analytics("key"), "You must pass your data plane url.");
 });
 
-test("remove trailing slashes from `host`", t => {
+test("remove trailing slashes from `host`", (t) => {
   const client = new Analytics("key", "http://google.com///");
 
   t.is(client.host, "http://google.com");
@@ -93,10 +94,10 @@ test("remove trailing slashes from `host`", t => {
   t.is(client.flushInterval, 20000);
 });
 
-test("overwrite defaults with options", t => {
+test("overwrite defaults with options", (t) => {
   const client = new Analytics("key", "a", {
     flushAt: 1,
-    flushInterval: 2
+    flushInterval: 2,
   });
 
   t.is(client.host, "a");
@@ -104,13 +105,13 @@ test("overwrite defaults with options", t => {
   t.is(client.flushInterval, 2);
 });
 
-test("keep the flushAt option above zero", t => {
+test("keep the flushAt option above zero", (t) => {
   const client = createClient({ flushAt: 0 });
 
   t.is(client.flushAt, 1);
 });
 
-test("enqueue - add a message to the queue", t => {
+test("enqueue - add a message to the queue", (t) => {
   const client = createClient();
 
   const originalTimestamp = new Date();
@@ -128,19 +129,19 @@ test("enqueue - add a message to the queue", t => {
       type: "type",
       context,
       _metadata: metadata,
-      messageId: item.message.messageId
+      messageId: item.message.messageId,
     },
-    callback: noop
+    callback: noop,
   });
 });
 
-test("enqueue - stringify userId", t => {
+test("enqueue - stringify userId", (t) => {
   const client = createClient();
 
   client.track(
     {
       userId: 10,
-      event: "event"
+      event: "event",
     },
     noop
   );
@@ -153,13 +154,13 @@ test("enqueue - stringify userId", t => {
   t.is(item.message.userId, "10");
 });
 
-test("enqueue - stringify anonymousId", t => {
+test("enqueue - stringify anonymousId", (t) => {
   const client = createClient();
 
   client.screen(
     {
       anonymousId: 157963456373623802,
-      name: "screen name"
+      name: "screen name",
     },
     noop
   );
@@ -173,7 +174,7 @@ test("enqueue - stringify anonymousId", t => {
   t.is(item.message.anonymousId, "157963456373623800");
 });
 
-test("enqueue - stringify ids handles strings", t => {
+test("enqueue - stringify ids handles strings", (t) => {
   const client = createClient();
 
   client.screen(
@@ -182,7 +183,7 @@ test("enqueue - stringify ids handles strings", t => {
       // We're explicitly testing the behaviour of the library if a customer
       // uses a String constructor.
       userId: new String("prateek"), // eslint-disable-line no-new-wrappers
-      name: "screen name"
+      name: "screen name",
     },
     noop
   );
@@ -195,7 +196,7 @@ test("enqueue - stringify ids handles strings", t => {
   t.is(item.message.userId.toString(), "prateek");
 });
 
-test("enqueue - don't modify the original message", t => {
+test("enqueue - don't modify the original message", (t) => {
   const client = createClient();
   const message = { event: "test" };
 
@@ -204,7 +205,7 @@ test("enqueue - don't modify the original message", t => {
   t.deepEqual(message, { event: "test" });
 });
 
-test("enqueue - flush on first message", t => {
+test("enqueue - flush on first message", (t) => {
   const client = createClient({ flushAt: 2 });
   client.flushed = false;
   spy(client, "flush");
@@ -213,16 +214,16 @@ test("enqueue - flush on first message", t => {
   t.true(client.flush.calledOnce);
 
   client.enqueue("type", {});
-  t.true(client.flush.calledOnce);
+  t.false(client.flush.calledOnce);
 
   client.enqueue("type", {});
-  t.true(client.flush.calledTwice);
+  t.false(client.flush.calledTwice);
 });
 
-test("enqueue - flush the queue if it hits the max length", t => {
+test("enqueue - flush the queue if it hits the max length", (t) => {
   const client = createClient({
     flushAt: 1,
-    flushInterval: null
+    flushInterval: null,
   });
 
   stub(client, "flush");
@@ -232,7 +233,7 @@ test("enqueue - flush the queue if it hits the max length", t => {
   t.true(client.flush.calledOnce);
 });
 
-test("enqueue - flush after a period of time", async t => {
+test("enqueue - flush after a period of time", async (t) => {
   const client = createClient({ flushInterval: 10 });
   stub(client, "flush");
 
@@ -244,7 +245,7 @@ test("enqueue - flush after a period of time", async t => {
   t.true(client.flush.calledOnce);
 });
 
-test("enqueue - don't reset an existing timer", async t => {
+test("enqueue - don't reset an existing timer", async (t) => {
   const client = createClient({ flushInterval: 10 });
   stub(client, "flush");
 
@@ -256,14 +257,14 @@ test("enqueue - don't reset an existing timer", async t => {
   t.true(client.flush.calledOnce);
 });
 
-test("enqueue - extend context", t => {
+test("enqueue - extend context", (t) => {
   const client = createClient();
 
   client.enqueue(
     "type",
     {
       event: "test",
-      context: { name: "travis" }
+      context: { name: "travis" },
     },
     noop
   );
@@ -274,7 +275,7 @@ test("enqueue - extend context", t => {
   t.deepEqual(actualContext, expectedContext);
 });
 
-test("enqueue - skip when client is disabled", async t => {
+test("enqueue - skip when client is disabled", async (t) => {
   const client = createClient({ enable: false });
   stub(client, "flush");
 
@@ -286,73 +287,49 @@ test("enqueue - skip when client is disabled", async t => {
   t.false(client.flush.called);
 });
 
-test("flush - don't fail when queue is empty", async t => {
+test("flush - don't fail when queue is empty", async (t) => {
   const client = createClient();
 
   await t.notThrows(client.flush());
 });
 
-test("flush - send messages", async t => {
-  const client = createClient({ flushAt: 2 });
-
-  const callbackA = spy();
-  const callbackB = spy();
-  const callbackC = spy();
-
-  client.queue = [];
-  client.identify({ userId: "id", traits: { traitOne: "a1" } }, callbackA);
-  client.page({ userId: "id", category: "category", name: "b1" }, callbackB);
-  client.track({ userId: "id", event: "c1" }, callbackC);
-
-  const data = await client.flush();
-  t.deepEqual(Object.keys(data), ["batch", "sentAt"]);
-  var keys = Object.keys(data.batch[0]);
-  t.true(keys.includes("originalTimestamp"));
-  t.true(keys.includes("sentAt"));
-  t.true(data.sentAt instanceof Date);
-  // the below is erractic behaviour, need to check?
-  // t.true(callbackA.calledOnce)
-  // t.true(callbackB.calledOnce)
-  // t.true(callbackC.called)
-});
-
-test("flush - respond with an error", async t => {
+test("flush - respond with an error", async (t) => {
   const client = createClient();
   const callback = spy();
 
   client.queue = [
     {
       message: "error",
-      callback
-    }
+      callback,
+    },
   ];
 
   await t.throws(client.flush(), "Bad Request");
 });
 
-test("flush - time out if configured", async t => {
+test("flush - time out if configured", async (t) => {
   const client = createClient({ timeout: 500 });
   const callback = spy();
 
   client.queue = [
     {
       message: "timeout",
-      callback
-    }
+      callback,
+    },
   ];
 
   await t.throws(client.flush(), "timeout of 500ms exceeded");
 });
 
-test("flush - skip when client is disabled", async t => {
+test("flush - skip when client is disabled", async (t) => {
   const client = createClient({ enable: false });
   const callback = spy();
 
   client.queue = [
     {
       message: "test",
-      callback
-    }
+      callback,
+    },
   ];
 
   await client.flush();
@@ -360,7 +337,7 @@ test("flush - skip when client is disabled", async t => {
   t.false(callback.called);
 });
 
-test("identify - enqueue a message", t => {
+test("identify - enqueue a message", (t) => {
   const client = createClient();
   stub(client, "enqueue");
 
@@ -371,7 +348,7 @@ test("identify - enqueue a message", t => {
   t.deepEqual(client.enqueue.firstCall.args, ["identify", message, noop]);
 });
 
-test("identify - require a userId or anonymousId", t => {
+test("identify - require a userId or anonymousId", (t) => {
   const client = createClient();
   stub(client, "enqueue");
 
@@ -384,13 +361,13 @@ test("identify - require a userId or anonymousId", t => {
   t.notThrows(() => client.identify({ anonymousId: "id" }));
 });
 
-test("group - enqueue a message", t => {
+test("group - enqueue a message", (t) => {
   const client = createClient();
   stub(client, "enqueue");
 
   const message = {
     groupId: "id",
-    userId: "id"
+    userId: "id",
   };
 
   client.group(message, noop);
@@ -399,7 +376,7 @@ test("group - enqueue a message", t => {
   t.deepEqual(client.enqueue.firstCall.args, ["group", message, noop]);
 });
 
-test("group - require a groupId and either userId or anonymousId", t => {
+test("group - require a groupId and either userId or anonymousId", (t) => {
   const client = createClient();
   stub(client, "enqueue");
 
@@ -416,25 +393,25 @@ test("group - require a groupId and either userId or anonymousId", t => {
   t.notThrows(() => {
     client.group({
       groupId: "id",
-      userId: "id"
+      userId: "id",
     });
   });
 
   t.notThrows(() => {
     client.group({
       groupId: "id",
-      anonymousId: "id"
+      anonymousId: "id",
     });
   });
 });
 
-test("track - enqueue a message", t => {
+test("track - enqueue a message", (t) => {
   const client = createClient();
   stub(client, "enqueue");
 
   const message = {
     userId: 1,
-    event: "event"
+    event: "event",
   };
 
   client.track(message, noop);
@@ -443,7 +420,7 @@ test("track - enqueue a message", t => {
   t.deepEqual(client.enqueue.firstCall.args, ["track", message, noop]);
 });
 
-test("track - require event and either userId or anonymousId", t => {
+test("track - require event and either userId or anonymousId", (t) => {
   const client = createClient();
   stub(client, "enqueue");
 
@@ -460,19 +437,19 @@ test("track - require event and either userId or anonymousId", t => {
   t.notThrows(() => {
     client.track({
       userId: "id",
-      event: "event"
+      event: "event",
     });
   });
 
   t.notThrows(() => {
     client.track({
       anonymousId: "id",
-      event: "event"
+      event: "event",
     });
   });
 });
 
-test("page - enqueue a message", t => {
+test("page - enqueue a message", (t) => {
   const client = createClient();
   stub(client, "enqueue");
 
@@ -483,7 +460,7 @@ test("page - enqueue a message", t => {
   t.deepEqual(client.enqueue.firstCall.args, ["page", message, noop]);
 });
 
-test("page - require either userId or anonymousId", t => {
+test("page - require either userId or anonymousId", (t) => {
   const client = createClient();
   stub(client, "enqueue");
 
@@ -496,7 +473,7 @@ test("page - require either userId or anonymousId", t => {
   t.notThrows(() => client.page({ anonymousId: "id" }));
 });
 
-test("screen - enqueue a message", t => {
+test("screen - enqueue a message", (t) => {
   const client = createClient();
   stub(client, "enqueue");
 
@@ -507,7 +484,7 @@ test("screen - enqueue a message", t => {
   t.deepEqual(client.enqueue.firstCall.args, ["screen", message, noop]);
 });
 
-test("screen - require either userId or anonymousId", t => {
+test("screen - require either userId or anonymousId", (t) => {
   const client = createClient();
   stub(client, "enqueue");
 
@@ -520,13 +497,13 @@ test("screen - require either userId or anonymousId", t => {
   t.notThrows(() => client.screen({ anonymousId: "id" }));
 });
 
-test("alias - enqueue a message", t => {
+test("alias - enqueue a message", (t) => {
   const client = createClient();
   stub(client, "enqueue");
 
   const message = {
     userId: "id",
-    previousId: "id"
+    previousId: "id",
   };
 
   client.alias(message, noop);
@@ -535,7 +512,7 @@ test("alias - enqueue a message", t => {
   t.deepEqual(client.enqueue.firstCall.args, ["alias", message, noop]);
 });
 
-test("alias - require previousId and userId", t => {
+test("alias - require previousId and userId", (t) => {
   const client = createClient();
   stub(client, "enqueue");
 
@@ -548,12 +525,12 @@ test("alias - require previousId and userId", t => {
   t.notThrows(() => {
     client.alias({
       userId: "id",
-      previousId: "id"
+      previousId: "id",
     });
   });
 });
 
-test("isErrorRetryable", t => {
+test("isErrorRetryable", (t) => {
   const client = createClient();
 
   t.false(client._isErrorRetryable({}));
@@ -570,13 +547,13 @@ test("isErrorRetryable", t => {
   t.false(client._isErrorRetryable({ response: { status: 200 } }));
 });
 
-test("allows messages > 32kb", t => {
+test("allows messages > 32kb", (t) => {
   const client = createClient();
 
   const event = {
     userId: 1,
     event: "event",
-    properties: {}
+    properties: {},
   };
   for (var i = 0; i < 100; i++) {
     event.properties[i] = "a";
