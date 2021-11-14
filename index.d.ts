@@ -20,8 +20,9 @@ interface apiObject {
  */
 interface integrationOptions {
   // Defaults to true
+  // If set to false, specific integration should be set to true to send the event
   All?: boolean;
-  // Destination name: true/false
+  // Destination name: true/false/integration specific information
   [index: string]: boolean | apiObject;
 }
 
