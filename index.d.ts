@@ -59,22 +59,7 @@ declare class Analytics {
     dataPlaneURL: string,
     options?: constructorOptions | undefined
   );
-  queue: any[];
-  pQueue: any;
-  pQueueInitialized: boolean;
-  pQueueOpts: {};
-  pJobOpts: {};
-  state: string;
-  writeKey: string;
-  host: string;
-  timeout: any;
-  flushAt: number;
-  flushInterval: any;
-  maxInternalQueueSize: any;
-  logLevel: any;
-  flushed: boolean;
-  logger: winston.Logger;
-  addPersistentQueueProcessor(): void;
+
   /**
    *
    * @param {Object} queueOpts
@@ -124,7 +109,7 @@ declare class Analytics {
     },
     callback: apiCallback
   ): void;
-  _validate(message: any, type: any): void;
+
   /**
    * Send an identify `message`.
    *
@@ -254,17 +239,7 @@ declare class Analytics {
     },
     callback?: apiCallback | undefined
   ): Analytics;
-  /**
-   * Add a `message` of type `type` to the queue and
-   * check whether it should be flushed.
-   *
-   * @param {String} type
-   * @param {Object} message
-   * @param {Function} [callback] (optional)
-   * @api private
-   */
-  enqueue(type: string, message: any, callback?: apiCallback): any;
-  flushTimer: NodeJS.Timeout;
+
   /**
    * Flush the current queue
    *
@@ -272,7 +247,4 @@ declare class Analytics {
    * @return {Analytics}
    */
   flush(callback?: Function): Analytics;
-  timer: NodeJS.Timeout;
-  _isErrorRetryable(error: any): boolean;
 }
-import winston = require("winston");
