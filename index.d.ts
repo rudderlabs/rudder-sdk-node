@@ -22,7 +22,7 @@ interface integrationOptions {
   // Defaults to true
   All?: boolean;
   // Destination name: true/false
-  [index: string]: boolean | undefined;
+  [index: string]: boolean | apiObject;
 }
 
 /**
@@ -31,10 +31,10 @@ interface integrationOptions {
  * constructorOptions { flushAt: 20, "flushInterval": 20000, "enable": true, "maxInternalQueueSize":20000 }
  */
 interface constructorOptions {
-  flushAt?: number | undefined;
-  flushInterval?: number | undefined;
-  enable?: boolean | undefined;
-  maxInternalQueueSize?: number | undefined;
+  flushAt?: number;
+  flushInterval?: number;
+  enable?: boolean;
+  maxInternalQueueSize?: number;
 }
 
 /**
@@ -57,7 +57,7 @@ declare class Analytics {
   constructor(
     writeKey: string,
     dataPlaneURL: string,
-    options?: constructorOptions | undefined
+    options?: constructorOptions
   );
 
   /**
@@ -94,17 +94,17 @@ declare class Analytics {
    */
   createPersistenceQueue(
     queueOpts: {
-      queueName?: string | undefined;
-      prefix?: string | undefined;
-      isMultiProcessor?: boolean | undefined;
+      queueName?: string;
+      prefix?: string;
+      isMultiProcessor?: boolean;
       redisOpts: {
-        port?: number | undefined;
-        host?: string | undefined;
-        db?: number | undefined;
-        password?: string | undefined;
+        port?: number;
+        host?: string;
+        db?: number;
+        password?: string;
       };
       jobOpts?: {
-        maxAttempts?: number | undefined;
+        maxAttempts?: number;
       };
     },
     callback: apiCallback
@@ -125,14 +125,14 @@ declare class Analytics {
    */
   identify(
     message: {
-      userId?: string | undefined;
-      anonymousId?: string | undefined;
-      context?: apiObject | undefined;
-      traits?: apiObject | undefined;
-      integrations?: integrationOptions | undefined;
-      timestamp?: Date | undefined;
+      userId?: string;
+      anonymousId?: string;
+      context?: apiObject;
+      traits?: apiObject;
+      integrations?: integrationOptions;
+      timestamp?: Date;
     },
-    callback?: apiCallback | undefined
+    callback?: apiCallback
   ): Analytics;
   /**
    * Send a group `message`.
@@ -151,14 +151,14 @@ declare class Analytics {
   group(
     message: {
       groupId: string;
-      userId?: string | undefined;
-      anonymousId?: string | undefined;
-      context?: apiObject | undefined;
-      traits?: apiObject | undefined;
-      integrations?: integrationOptions | undefined;
-      timestamp?: Date | undefined;
+      userId?: string;
+      anonymousId?: string;
+      context?: apiObject;
+      traits?: apiObject;
+      integrations?: integrationOptions;
+      timestamp?: Date;
     },
-    callback?: apiCallback | undefined
+    callback?: apiCallback
   ): Analytics;
   /**
    * Send a track `message`.
@@ -177,14 +177,14 @@ declare class Analytics {
   track(
     message: {
       event: string;
-      userId?: string | undefined;
-      anonymousId?: string | undefined;
-      context?: apiObject | undefined;
-      properties?: apiObject | undefined;
-      integrations?: integrationOptions | undefined;
-      timestamp?: Date | undefined;
+      userId?: string;
+      anonymousId?: string;
+      context?: apiObject;
+      properties?: apiObject;
+      integrations?: integrationOptions;
+      timestamp?: Date;
     },
-    callback?: apiCallback | undefined
+    callback?: apiCallback
   ): Analytics;
   /**
    * Send a page `message`.
@@ -203,14 +203,14 @@ declare class Analytics {
   page(
     message: {
       name: string;
-      userId?: string | undefined;
-      anonymousId?: string | undefined;
-      context?: apiObject | undefined;
-      properties?: apiObject | undefined;
-      integrations?: integrationOptions | undefined;
-      timestamp?: Date | undefined;
+      userId?: string;
+      anonymousId?: string;
+      context?: apiObject;
+      properties?: apiObject;
+      integrations?: integrationOptions;
+      timestamp?: Date;
     },
-    callback?: apiCallback | undefined
+    callback?: apiCallback
   ): Analytics;
 
   /**
@@ -230,14 +230,14 @@ declare class Analytics {
   alias(
     message: {
       previousId: string;
-      userId?: string | undefined;
-      anonymousId?: string | undefined;
-      context?: apiObject | undefined;
-      properties?: apiObject | undefined;
-      integrations?: integrationOptions | undefined;
-      timestamp?: Date | undefined;
+      userId?: string;
+      anonymousId?: string;
+      context?: apiObject;
+      properties?: apiObject;
+      integrations?: integrationOptions;
+      timestamp?: Date;
     },
-    callback?: apiCallback | undefined
+    callback?: apiCallback
   ): Analytics;
 
   /**
