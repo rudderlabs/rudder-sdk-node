@@ -36,6 +36,7 @@ interface constructorOptions {
   flushInterval?: number;
   enable?: boolean;
   maxInternalQueueSize?: number;
+  logLevel?: string;
 }
 
 /**
