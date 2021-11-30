@@ -29,7 +29,7 @@ interface integrationOptions {
 /**
  * Represents the constructor options object
  * Example usages:
- * constructorOptions { flushAt: 20, "flushInterval": 20000, "enable": true, "maxInternalQueueSize":20000 }
+ * constructorOptions { flushAt: 20, "flushInterval": 20000, "enable": true, "maxInternalQueueSize":20000, "logLevel": "info"/"debug"/"error"/"silly"}
  */
 interface constructorOptions {
   flushAt?: number;
