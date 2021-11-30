@@ -1,6 +1,6 @@
 {
   "name": "@rudderstack/rudder-sdk-node",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Rudder Node SDK",
   "license": "",
   "repository": "rudderlabs/rudder-sdk-node",
