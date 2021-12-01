@@ -24,7 +24,7 @@ const noop = () => {};
 
 class Analytics {
   /**
-   * Initialize a new `Analytics` with your Rudderstack source's `writeKey` and an
+   * Initialize a new `Analytics` with your RudderStack source's `writeKey` and an
    * optional dictionary of `options`.
    *
    * @param {String} writeKey
