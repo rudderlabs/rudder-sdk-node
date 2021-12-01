@@ -24,7 +24,7 @@ const noop = () => {};
 
 class Analytics {
   /**
-   * Initialize a new `Analytics` with your Segment project's `writeKey` and an
+   * Initialize a new `Analytics` with your Rudderstack source's `writeKey` and an
    * optional dictionary of `options`.
    *
    * @param {String} writeKey
@@ -155,7 +155,9 @@ class Analytics {
                     );
                   })
                   .catch((error) => {
-                    this.logger.error("failed to requeue job " + jobData.description);
+                    this.logger.error(
+                      "failed to requeue job " + jobData.description
+                    );
                     rdone(jobData.callbacks, error);
                     done(error);
                   });
@@ -204,7 +206,9 @@ class Analytics {
    */
   createPersistenceQueue(queueOpts, callback) {
     if (this.pQueueInitialized) {
-      this.logger.debug("a persistent queue is already initialized, skipping...");
+      this.logger.debug(
+        "a persistent queue is already initialized, skipping..."
+      );
       return;
     }
 
@@ -240,7 +244,9 @@ class Analytics {
             .then((jobs) => {
               this.logger.debug("success geting active jobs");
               if (jobs.length == 0) {
-                this.logger.debug("there are no active jobs while starting up queue");
+                this.logger.debug(
+                  "there are no active jobs while starting up queue"
+                );
                 this.addPersistentQueueProcessor();
                 this.logger.debug("success adding process");
                 this.pQueueInitialized = true;
