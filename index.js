@@ -77,7 +77,7 @@ class Analytics {
   }
 
   addPersistentQueueProcessor() {
-    const _isErrorRetryable = this._isErrorRetryable;
+    const _isErrorRetryable = this._isErrorRetryable.bind(this);
     const rdone = (callbacks, err) => {
       callbacks.forEach((callback_) => {
         callback_(err);
@@ -89,19 +89,19 @@ class Analytics {
 
     this.pQueue.on("failed", function(job, error) {
       let jobData = eval("(" + job.data.eventData + ")");
-      console.log("job : " + jobData.description + " " + error);
+      this.logger.error("job : " + jobData.description + " " + error);
     });
 
     // tapping on queue events
     this.pQueue.on("completed", function(job, result) {
       let jobData = eval("(" + job.data.eventData + ")");
       result = result || "completed";
-      console.log("job : " + jobData.description + " " + result);
+      this.logger.debug("job : " + jobData.description + " " + result);
     });
 
     this.pQueue.on("stalled", function(job) {
       let jobData = eval("(" + job.data.eventData + ")");
-      console.log("job : " + jobData.description + " is stalled...");
+      this.logger.warn("job : " + jobData.description + " is stalled...");
     });
 
     this.pQueue.process(function(job, done) {
@@ -155,7 +155,7 @@ class Analytics {
                     );
                   })
                   .catch((error) => {
-                    console.log("failed to requeue job " + jobData.description);
+                    this.logger.error("failed to requeue job " + jobData.description);
                     rdone(jobData.callbacks, error);
                     done(error);
                   });
@@ -204,7 +204,7 @@ class Analytics {
    */
   createPersistenceQueue(queueOpts, callback) {
     if (this.pQueueInitialized) {
-      console.log("a persistent queue is already initialized, skipping...");
+      this.logger.debug("a persistent queue is already initialized, skipping...");
       return;
     }
 
@@ -222,7 +222,7 @@ class Analytics {
       prefix: "{" + this.pQueueOpts.prefix + "}" || "{rudder}",
     });
 
-    console.log("isMultiProcessor: " + this.pQueueOpts.isMultiProcessor);
+    this.logger.debug("isMultiProcessor: " + this.pQueueOpts.isMultiProcessor);
 
     this.pQueue
       .isReady()
@@ -238,11 +238,11 @@ class Analytics {
           this.pQueue
             .getActive()
             .then((jobs) => {
-              console.log("success geting active jobs");
+              this.logger.debug("success geting active jobs");
               if (jobs.length == 0) {
-                console.log("there are no active jobs while starting up queue");
+                this.logger.debug("there are no active jobs while starting up queue");
                 this.addPersistentQueueProcessor();
-                console.log("success adding process");
+                this.logger.debug("success adding process");
                 this.pQueueInitialized = true;
                 callback();
               } else {
@@ -250,7 +250,7 @@ class Analytics {
                 // moving active job is important as this job doesn't have a process function
                 // and will later be retried which will mess event ordering
                 if (jobs.length > 1) {
-                  console.log(
+                  this.logger.debug(
                     "number of active jobs at starting up queue > 1 "
                   );
                   callback(
@@ -260,43 +260,43 @@ class Analytics {
                   );
                   return;
                 }
-                console.log(
+                this.logger.debug(
                   "number of active jobs at starting up queue = " + jobs.length
                 );
                 jobs.forEach((job) => {
                   job
                     .remove()
                     .then(() => {
-                      console.log("success removed active job");
+                      this.logger.debug("success removed active job");
                       let jobData = eval("(" + job.data.eventData + ")");
                       jobData.attempts = 0;
                       this.pQueue
                         .add({ eventData: serialize(jobData) }, { lifo: true })
                         .then((removedJob) => {
-                          console.log(
+                          this.logger.debug(
                             "success adding removed job back to queue"
                           );
                           this.addPersistentQueueProcessor();
-                          console.log("success adding process");
+                          this.logger.debug("success adding process");
                           this.pQueueInitialized = true;
                           callback();
                         });
                     })
                     .catch((error) => {
-                      console.log("failed to remove active job");
+                      this.logger.error("failed to remove active job");
                       callback(error);
                     });
                 });
               }
             })
             .catch((error) => {
-              console.log("failed geting active jobs");
+              this.logger.error("failed geting active jobs");
               callback(error);
             });
         }
       })
       .catch((error) => {
-        console.log("queue not ready");
+        this.logger.error("queue not ready");
         callback(error);
       });
   }
@@ -647,7 +647,7 @@ class Analytics {
         ...req,
         "axios-retry": {
           retries: 3,
-          retryCondition: this._isErrorRetryable,
+          retryCondition: this._isErrorRetryable.bind(this),
           retryDelay: axiosRetry.exponentialDelay,
         },
       })
@@ -688,7 +688,7 @@ class Analytics {
       return false;
     }
 
-    console.log("error status: " + error.response.status);
+    this.logger.error("error status: " + error.response.status);
     // Retry Server Errors (5xx).
     if (error.response.status >= 500 && error.response.status <= 599) {
       return true;
