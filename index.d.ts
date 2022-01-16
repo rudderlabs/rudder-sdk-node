@@ -8,6 +8,7 @@ interface apiObject {
     | string
     | number
     | boolean
+    | undefined
     | apiObject
     | (string | number | boolean | apiObject)[];
 }
