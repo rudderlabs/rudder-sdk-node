@@ -868,7 +868,7 @@ auto-bind@^1.1.0:
   resolved "https://registry.yarnpkg.com/auto-bind/-/auto-bind-1.2.1.tgz#807f7910b0210db9eefe133f3492c28e89698b96"
   integrity sha512-/W9yj1yKmBLwpexwAujeD9YHwYmRuWFGV8HWE7smQab797VeHa4/cnE2NFeDhA+E+5e/OGBI8763EhLjfZ/MXA==
 
-auto-changelog@2.3.0:
+auto-changelog@^2.3.0:
   version "2.3.0"
   resolved "https://registry.yarnpkg.com/auto-changelog/-/auto-changelog-2.3.0.tgz#08ab8b1840a5d804410f1d1a5d2c4b2df0d835e1"
   integrity sha512-S2B+RtTgytsa7l5iFGBoWT9W9ylITT5JJ8OaMJ7nrwvnlRm1dSS2tghaYueDeInZZafOE+1llH3tUQjMDRVS1g==
