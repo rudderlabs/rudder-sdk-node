@@ -1,34 +1,62 @@
-# What is RudderStack?
+<p align="center">
+  <a href="https://rudderstack.com/">
+    <img src="https://user-images.githubusercontent.com/59817155/121357083-1c571300-c94f-11eb-8cc7-ce6df13855c9.png">
+  </a>
+</p>
 
-[RudderStack](https://rudderstack.com/) is a **customer data pipeline** tool for collecting, routing and processing data from your websites, apps, cloud tools, and data warehouse.
+<p align="center"><b>The Customer Data Platform for Developers</b></p>
 
-More information on RudderStack can be found [here](https://github.com/rudderlabs/rudder-server).
+<p align="center">
+  <b>
+    <a href="https://rudderstack.com">Website</a>
+    ·
+    <a href="https://rudderstack.com/docs/stream-sources/rudderstack-sdk-integration-guides/rudderstack-node-sdk/">Documentation</a>
+    ·
+    <a href="https://rudderstack.com/join-rudderstack-slack-community">Community Slack</a>
+  </b>
+</p>
+
+---
 
 # RudderStack Node.js SDK
 
-RudderStack’s Node.js SDK allows you to track your customer event data from your Node.js code. Once enabled, the event requests hit the RudderStack servers. RudderStack then routes the events to the specified destination platforms as configured by you.
+The RudderStack Node.js SDK lets you track your customer event data from your Node.js applications and send it to your specified destinations.
 
-## Installation
+Refer to the [**documentation**](https://www.rudderstack.com/docs/stream-sources/rudderstack-sdk-integration-guides/rudderstack-node-sdk/) for more details.
+
+## Installing the SDK
+
+Run the following command to install the Node.js SDK via **npm**:
 
 ```bash
 $ npm install @rudderstack/rudder-sdk-node
 ```
 
-## Usage
+## Using the SDK
 
-```js
+To create a global RudderStack client object and use it for the subsequent event calls, run the following snippet:
+
+```javascript
 const Analytics = require("@rudderstack/rudder-sdk-node");
 
 // we need the batch endpoint of the Rudder server you are running
-const client = new Analytics("write key", "<data-plane-uri>/v1/batch");
-
-client.track({
-  event: "event name",
-  userId: "user id"
-});
+const client = new Analytics(WRITE_KEY, DATA_PLANE_URL/v1/batch");
 ```
 
-## Initialization for persistence
+## Supported calls
+
+Refer to the [**SDK documentation**](https://www.rudderstack.com/docs/stream-sources/rudderstack-sdk-integration-guides/rudderstack-node-sdk/) for more information on the supported calls.
+
+## Initializing the SDK for data persistence
+
+> **This is a beta feature. Contact us on our [Community Slack](https://rudderstack.com/join-rudderstack-slack-community) in case you face any issues.**
+
+RudderStack has a data persistence feature to persist the events in Redis, leading to better event delivery guarantees. Also, the SDK can retry event delivery multiple times as the queue is maintained in a different process space(Redis).
+
+| To use this feature, you will need to host a Redis server and use it as the intermediary data storage queue. |
+| :------------------------------------------------------------------------------------------------------------|
+
+A sample SDK initialization is shown below:
 
 ```
 const client = new Analytics(
@@ -44,69 +72,22 @@ const client = new Analytics(
 client.createPersistenceQueue({ redisOpts: { host: "localhost" } }, err => {})
 ```
 
-Adding a method **createPersistenceQueue** which takes as input two params **queueOpts** and a **callback**
+To initialize the data persistence queue, you need to call the `createPersistenceQueue` method which takes two parameters as input - `queueOpts` and a `callback`. The `createPersistenceQueue` method will initialize a Redis list by calling [Bull's](https://github.com/OptimalBits/bull) utility methods. 
 
-```
-QueueOpts {
-  queueName ?: string = rudderEventsQueue,
-  isMultiProcessor ? : boolean = false
-  prefix ? : string = {rudder},  // pass a value without the {}
-  redisOpts : RedisOpts,
-  jobOpts ?: JobOpts
-}
+> **If you do not call `createPersistenceQueue` after initializing the SDK, the SDK will not implement data persistence.**
 
-https://github.com/OptimalBits/bull/blob/develop/REFERENCE.md#queue
-RedisOpts {
- port?: number = 6379;
- host?: string = localhost;
- db?: number = 0;
- password?: string;
-}
+Read the detailed [documentation](https://www.rudderstack.com/docs/stream-sources/rudderstack-sdk-integration-guides/rudderstack-node-sdk/#nodejs-sdk-data-persistence) for more information on `createPersistenceQueue` and the other [configurable parameters](https://www.rudderstack.com/docs/stream-sources/rudderstack-sdk-integration-guides/rudderstack-node-sdk/#configurable-parameters).
 
-JobOpts {
-  maxAttempts ? : number = 10
-}
+### Event flow
 
-callback: function(error) || function() // createPersistenceQueue calls this with error or nothing(in case of success), user
-                                                                // should retry in case of error
+For more information on how the event flow occurs with data persistence enabled, refer to the [documentation](https://www.rudderstack.com/docs/stream-sources/rudderstack-sdk-integration-guides/rudderstack-node-sdk/#event-flow).
 
-```
+### Limitations around data persistence
 
-The **createPersistenceQueue** method will initialize a Redis list by calling [Bull's](https://github.com/OptimalBits/bull) utility methods. It will also add a single job processor for processing(making requests to Rudder server) jobs that are pushed into the list. Before adding a processor, the SDK will remove the last active job(should be at max 1 active) if any and push it to be processed again in order. Error in doing this will lead to calling the **callback with error parameter**. Retry calling **createPersistenceQueue** with backoff.
+- Refer to this [page](https://gitter.im/OptimalBits/bull/archives/2018/04/17) to understand the limitations
+- For more details on the limitations, read: https://redis.io/topics/cluster-tutorial#redis-cluster-data-sharding
+- As a workaround, refer to this page: https://gitter.im/OptimalBits/bull/archives/2018/04/17. We pass a prefix with default value as {rudder}.
 
-If the **createPersistenceQueue** method is not called after initialising the SDK by the user, the SDK will work with no persistence and the behaviour will be same as at present.
+## Contact us
 
-### Flow
-
-- Calling SDK apis like track, page, identify etc will push the events to an in-memory array
-- the events from the array are flushed as a batch to Redis persistence based on the **flushAt** and **flushInterval** setting. Since, there is a communication to a separate process, tune the flushAt/flushInterval setting to slow down the hit to Redis. The in-memory array has a max size of **maxInternalQueueSize**, after which events won't be accepted if not drained at the other side (cases where Redis connection is slow etc)
-- The processor will take the batch formed in the above step from Redis list and make a request to Rudder server. If succeeded, the job will be pushed to completed queue in Redis (Bull npm package terminology). In case of notRetryable error(4xx mainly), the job will be moved to failed queue (Bull npm package terminology). These queues are persistent and can be inspected directly in Redis or using an queue viewer [like](https://github.com/vcapretz/bull-board).
-- In case of retryable errors, the job is pushed to completed queue and a new instance of job with the same batch data is created and pushed to front of the queue (to maintain order), so that the next job to be processed is the same (this is the retry functionality). This will go upto **JobOpts.maxAttempts** time with exponential backoff of power 2.
-- If the job failed even after **JobOpts.maxAttempts**, it is moved to failed queue( explained above ).
-- If the node process dies with jobs still in active state (not completed nor failed but in the process of sending/retrying), the **next time the SDK is initialised and createPersistenceQueue** is called, it will be removed and a new instance with the same batch data is pushed in front of the queue to picked up first by the processor.
-
-### Important Parameters
-
-- flushAt
-- flushInterval
-- maxInternalQueueSize
-- JobOpts.maxAttempts
-
-### Notes
-
-- **isMultiProcessor** flag determines whether to handle previously active jobs, if false => the active job handling from previous processor is applied else Bull handles it by moving it to back of waiting queue.
-
-### Limitation
-
-https://gitter.im/OptimalBits/bull/archives/2018/04/17
-**Details**: https://redis.io/topics/cluster-tutorial#redis-cluster-data-sharding
-**Workaround**: https://gitter.im/OptimalBits/bull/archives/2018/04/17, we are passing a prefix with default {rudder}
-
-## Documentation
-
-Documentation is available [here](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/rudderstack-node-sdk).
-
-## Contact Us
-
-If you come across any issues while configuring or using the RudderStack Node.js SDK, please feel free to [contact us](https://rudderstack.com/contact/) or start a conversation on our [Slack](https://resources.rudderstack.com/join-rudderstack-slack) channel. We will be happy to help you.
-
+If you come across any issues while configuring or using the RudderStack Node.js SDK, you can [**contact us**](https://rudderstack.com/contact/) or start a conversation in our [**Slack**](https://resources.rudderstack.com/join-rudderstack-slack) community.
