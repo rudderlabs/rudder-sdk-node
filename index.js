@@ -545,15 +545,10 @@ class Analytics {
   flush(callback) {
     // check if earlier flush was pushed to queue
     this.logger.debug("in flush");
-    if (this.state == "running") {
-      this.logger.debug("skipping flush, earlier flush in progress");
-      return;
-    }
-    this.state = "running";
+
     callback = callback || noop;
 
     if (!this.enable) {
-      this.state = "idle";
       return setImmediate(callback);
     }
 
@@ -575,7 +570,7 @@ class Analytics {
       return setImmediate(callback);
     }
 
-    const items = this.queue.slice(0, this.flushAt);
+    const items = this.queue.splice(0, this.flushAt);
     const callbacks = items.map((item) => item.callback);
     const messages = items.map((item) => {
       // if someone mangles directly with queue
@@ -635,13 +630,14 @@ class Analytics {
         .add({ eventData: serialize(eventData) })
         .then((pushedJob) => {
           this.logger.debug("pushed job to queue");
-          this.queue.splice(0, items.length);
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
-          this.state = "idle";
         })
         .catch((error) => {
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
-          this.state = "idle";
+          const temp = eventData.request.data.batch.map((e) => {
+            return { message: e };
+          });
+          this.queue.unshift(temp);
           this.logger.error(
             "failed to push to redis queue, in-memory queue size: " +
               this.queue.length
@@ -658,7 +654,6 @@ class Analytics {
         },
       })
         .then((response) => {
-          this.queue.splice(0, items.length);
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = "idle";
           done();
@@ -669,7 +664,6 @@ class Analytics {
               items.length +
               " events"
           );
-          this.queue.splice(0, items.length);
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = "idle";
           if (err.response) {
