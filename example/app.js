@@ -68,3 +68,5 @@ test().then(() => {
 });
 
 exports.Rudderanalytics = Rudderanalytics;
+
+// run this file with the command "node app"
