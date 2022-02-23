@@ -7,7 +7,7 @@ const client = new Rudderanalytics(writeKey, `${dataPlaneURL}/v1/batch`, {
   // flushAt: 2,
 });
 /**
- * Sample function to send 3 rudder events[identify,track,track] a make sure it's completion by promosifiying the flush
+ * Sample function to send 3 rudder events[identify,track,track] and make sure it's completion by promosifiying the flush
  */
 async function test() {
   // promisify the flush method
@@ -29,7 +29,6 @@ async function test() {
       console.log("In identify call");
     }
   );
-  console.log("2");
 
   client.track(
     {
