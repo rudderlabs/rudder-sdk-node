@@ -634,10 +634,7 @@ class Analytics {
         })
         .catch((error) => {
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
-          const temp = eventData.request.data.batch.map((e) => {
-            return { message: e };
-          });
-          this.queue.unshift(temp);
+          this.queue.unshift(items);
           this.logger.error(
             "failed to push to redis queue, in-memory queue size: " +
               this.queue.length
