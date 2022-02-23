@@ -47,7 +47,7 @@ class Analytics {
     this.pQueueInitialized = false;
     this.pQueueOpts = undefined;
     this.pJobOpts = {};
-    this.state = "idle";
+    this.state = "idle"; // this variable is not being used anymore. Previously it is used to prevent concurrency, added at the time of persistance support is added.
     this.writeKey = writeKey;
     this.host = removeSlash(dataPlaneURL);
     this.timeout = options.timeout || false;
@@ -545,10 +545,11 @@ class Analytics {
   flush(callback) {
     // check if earlier flush was pushed to queue
     this.logger.debug("in flush");
-
+    this.state = "running";
     callback = callback || noop;
 
     if (!this.enable) {
+      this.state = "idle";
       return setImmediate(callback);
     }
 
@@ -631,10 +632,12 @@ class Analytics {
         .then((pushedJob) => {
           this.logger.debug("pushed job to queue");
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
+          this.state = "idle";
         })
         .catch((error) => {
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.queue.unshift(items);
+          this.state = "idle";
           this.logger.error(
             "failed to push to redis queue, in-memory queue size: " +
               this.queue.length
