@@ -214,10 +214,10 @@ test("enqueue - flush on first message", (t) => {
   t.true(client.flush.calledOnce);
 
   client.enqueue("type", {});
-  t.false(client.flush.calledOnce);
+  t.true(client.flush.calledOnce);
 
   client.enqueue("type", {});
-  t.false(client.flush.calledTwice);
+  t.true(client.flush.calledTwice);
 });
 
 test("enqueue - flush the queue if it hits the max length", (t) => {
