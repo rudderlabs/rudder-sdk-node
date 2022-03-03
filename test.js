@@ -1,5 +1,4 @@
 import { spy, stub } from "sinon";
-// import bodyParser from "body-parser";
 import express from "express";
 import delay from "delay";
 import auth from "basic-auth";
