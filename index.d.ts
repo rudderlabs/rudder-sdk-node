@@ -1,9 +1,9 @@
-export = Analytics;
+export default Analytics;
 /**
  * Represents a generic object in the APIs
  * Use for parameters like context, traits etc.
  */
-interface apiObject {
+export type apiObject = {
   [index: string]:
     | string
     | number
@@ -11,7 +11,7 @@ interface apiObject {
     | undefined
     | apiObject
     | (string | number | boolean | apiObject)[];
-}
+};
 
 /**
  * Represents the integration options object
