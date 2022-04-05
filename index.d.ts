@@ -1,9 +1,10 @@
-export = Analytics;
+export default Analytics;
+
 /**
  * Represents a generic object in the APIs
  * Use for parameters like context, traits etc.
  */
-interface apiObject {
+export interface apiObject {
   [index: string]:
     | string
     | number
@@ -19,7 +20,7 @@ interface apiObject {
  * integrationOptions { All: false, "Google Analytics": true, "Braze": true}
  * integrationOptions { All: true, "Chartbeat": false, "Customer.io": false}
  */
-interface integrationOptions {
+export interface integrationOptions {
   // Defaults to true
   // If set to false, specific integration should be set to true to send the event
   All?: boolean;
@@ -32,7 +33,7 @@ interface integrationOptions {
  * Example usages:
  * constructorOptions { flushAt: 20, "flushInterval": 20000, "enable": true, "maxInternalQueueSize":20000, "logLevel": "info"/"debug"/"error"/"silly"}
  */
-interface constructorOptions {
+export interface constructorOptions {
   flushAt?: number;
   flushInterval?: number;
   enable?: boolean;
@@ -43,7 +44,7 @@ interface constructorOptions {
 /**
  * Represents the callback in the APIs
  */
-type apiCallback = () => void;
+export type apiCallback = () => void;
 declare class Analytics {
   /**
    * Initialize a new `Analytics` with your Segment project's `writeKey` and an
