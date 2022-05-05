@@ -322,6 +322,17 @@ class Analytics {
     }
   }
 
+  userIdValidation(message, type) {
+    let valid = true;
+    if (!message.userId && !message.anonymousId) {
+      this.logger.error(
+        `${type}:: Either user ID or anonymous ID is not present in the payload`
+      );
+      valid = false;
+    }
+    return valid;
+  }
+
   /**
    * Send an identify `message`.
    *
@@ -337,6 +348,7 @@ class Analytics {
    */
 
   identify(message, callback) {
+    if (!this.userIdValidation(message, "Identify")) return;
     this._validate(message, "identify");
     this.enqueue("identify", message, callback);
     return this;
@@ -358,6 +370,11 @@ class Analytics {
    */
 
   group(message, callback) {
+    if (!this.userIdValidation(message, "Group")) return;
+    if (!message.groupId) {
+      this.logger.error("Group:: Group ID is not present in the payload");
+      return;
+    }
     this._validate(message, "group");
     this.enqueue("group", message, callback);
     return this;
@@ -379,6 +396,11 @@ class Analytics {
    */
 
   track(message, callback) {
+    if (!this.userIdValidation(message, "Track")) return;
+    if (!message.event) {
+      this.logger.error("Track:: Event name is not present in the payload");
+      return;
+    }
     this._validate(message, "track");
     this.enqueue("track", message, callback);
     return this;
@@ -400,6 +422,7 @@ class Analytics {
    */
 
   page(message, callback) {
+    if (!this.userIdValidation(message, "Page")) return;
     this._validate(message, "page");
     this.enqueue("page", message, callback);
     return this;
@@ -414,6 +437,7 @@ class Analytics {
    */
 
   screen(message, callback) {
+    if (!this.userIdValidation(message, "Screen")) return;
     this._validate(message, "screen");
     this.enqueue("screen", message, callback);
     return this;
@@ -435,6 +459,13 @@ class Analytics {
    */
 
   alias(message, callback) {
+    if (!this.userIdValidation(message, "Alias")) return;
+    if (!message.previousId) {
+      this.logger.error(
+        "Alias:: Previous user ID is not present in the payload"
+      );
+      return;
+    }
     this._validate(message, "alias");
     this.enqueue("alias", message, callback);
     return this;
@@ -488,6 +519,8 @@ class Analytics {
       },
       ...lMessage.context,
     };
+
+    lMessage.channel = "server";
 
     lMessage._metadata = {
       nodeVersion: process.versions.node,
