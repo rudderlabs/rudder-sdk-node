@@ -119,7 +119,6 @@ test("enqueue - add a message to the queue", (t) => {
   t.is(client.queue.length, 1);
 
   const item = client.queue.pop();
-
   t.is(typeof item.message.messageId, "string");
   t.regex(item.message.messageId, /node-[a-zA-Z0-9]{32}/);
   t.deepEqual(item, {
@@ -127,6 +126,7 @@ test("enqueue - add a message to the queue", (t) => {
       originalTimestamp,
       type: "type",
       context,
+      channel: "server",
       _metadata: metadata,
       messageId: item.message.messageId,
     },
