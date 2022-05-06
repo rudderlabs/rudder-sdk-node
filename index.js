@@ -489,6 +489,8 @@ class Analytics {
       ...lMessage.context,
     };
 
+    lMessage.channel = "server";
+
     lMessage._metadata = {
       nodeVersion: process.versions.node,
       ...lMessage._metadata,
