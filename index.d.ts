@@ -45,12 +45,6 @@ export interface constructorOptions {
  * Represents the callback in the APIs
  */
 export type apiCallback = () => void;
-
-/**
- * Represents the callback in persistence queue
- */
-export type persistenceQueueCallback = (error?: Error | string) => void;
-
 declare class Analytics {
   /**
    * Initialize a new `Analytics` with your Segment project's `writeKey` and an
@@ -117,7 +111,7 @@ declare class Analytics {
         maxAttempts?: number;
       };
     },
-    callback: persistenceQueueCallback
+    callback: (error?: Error | string) => void
   ): void;
 
   /**
