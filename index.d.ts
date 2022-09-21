@@ -111,7 +111,7 @@ declare class Analytics {
         maxAttempts?: number;
       };
     },
-    callback: apiCallback
+    callback: (error?: Error | string) => void
   ): void;
 
   /**
