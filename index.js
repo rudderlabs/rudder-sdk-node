@@ -2,7 +2,7 @@ const assert = require("assert");
 const removeSlash = require("remove-trailing-slash");
 const looselyValidate = require("@segment/loosely-validate-event");
 const serialize = require("serialize-javascript");
-const Queue = require("bull");
+
 const axios = require("axios");
 const axiosRetry = require("axios-retry");
 const ms = require("ms");
@@ -212,6 +212,7 @@ class Analytics {
       return;
     }
 
+    const Queue = require("bull");
     this.pQueueOpts = queueOpts || {};
     this.pQueueOpts.isMultiProcessor =
       this.pQueueOpts.isMultiProcessor || false;
