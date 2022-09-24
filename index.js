@@ -14,9 +14,8 @@ const winston = require("winston");
 const version = require("./package.json").version;
 
 const logFormat = winston.format.printf(
-  ({ level, message, label, timestamp }) => {
-    return `${timestamp} [${label}] ${level}: ${message}`;
-  }
+  ({ level, message, label, timestamp }) =>
+    `${timestamp} [${label}] ${level}: ${message}`
 );
 
 const setImmediate = global.setImmediate || process.nextTick.bind(process);
@@ -87,28 +86,28 @@ class Analytics {
     const payloadQueue = this.pQueue;
     const jobOpts = this.pJobOpts;
 
-    this.pQueue.on("failed", function(job, error) {
-      let jobData = eval("(" + job.data.eventData + ")");
+    this.pQueue.on("failed", function (job, error) {
+      const jobData = eval("(" + job.data.eventData + ")");
       this.logger.error("job : " + jobData.description + " " + error);
     });
 
     // tapping on queue events
-    this.pQueue.on("completed", function(job, result) {
-      let jobData = eval("(" + job.data.eventData + ")");
+    this.pQueue.on("completed", function (job, result) {
+      const jobData = eval("(" + job.data.eventData + ")");
       result = result || "completed";
       this.logger.debug("job : " + jobData.description + " " + result);
     });
 
-    this.pQueue.on("stalled", function(job) {
-      let jobData = eval("(" + job.data.eventData + ")");
+    this.pQueue.on("stalled", function (job) {
+      const jobData = eval("(" + job.data.eventData + ")");
       this.logger.warn("job : " + jobData.description + " is stalled...");
     });
 
-    this.pQueue.process(function(job, done) {
+    this.pQueue.process((job, done) => {
       // job failed for maxAttempts or more times, push to failed queue
       // starting with attempt = 0
-      let maxAttempts = jobOpts.maxAttempts || 10;
-      let jobData = eval("(" + job.data.eventData + ")");
+      const maxAttempts = jobOpts.maxAttempts || 10;
+      const jobData = eval("(" + job.data.eventData + ")");
       if (jobData.attempts >= maxAttempts) {
         done(
           new Error(
@@ -122,8 +121,8 @@ class Analytics {
       } else {
         // process the job after exponential delay, if it's the 0th attempt, setTimeout will fire immediately
         // max delay is 30 sec, it is mostly in sync with a bull queue job max lock time
-        setTimeout(function() {
-          let req = jobData.request;
+        setTimeout(function () {
+          const req = jobData.request;
           req.data.sentAt = new Date();
           // if request succeeded, mark the job done and move to completed
           axios(req)
@@ -134,7 +133,7 @@ class Analytics {
             .catch((err) => {
               // check if request is retryable
               if (_isErrorRetryable(err)) {
-                let attempts = jobData.attempts;
+                const attempts = jobData.attempts;
                 jobData.attempts = attempts + 1;
                 // increment attempt
                 // add a new job to queue in lifo
@@ -167,7 +166,7 @@ class Analytics {
                 done(err);
               }
             });
-        }, Math.min(30000, Math.pow(2, jobData.attempts) * 1000));
+        }, Math.min(30000, 2 ** jobData.attempts * 1000));
       }
     });
   }
@@ -274,7 +273,8 @@ class Analytics {
                     .remove()
                     .then(() => {
                       this.logger.debug("success removed active job");
-                      let jobData = eval("(" + job.data.eventData + ")");
+                      // eslint-disable-next-line no-eval
+                      const jobData = eval("(" + job.data.eventData + ")");
                       jobData.attempts = 0;
                       this.pQueue
                         .add({ eventData: serialize(jobData) }, { lifo: true })
@@ -622,10 +622,10 @@ class Analytics {
     }
 
     if (this.pQueue && this.pQueueInitialized) {
-      let eventData = {
+      const eventData = {
         description: `node-${md5(JSON.stringify(req))}-${uuidv4()}`,
         request: req,
-        callbacks: callbacks,
+        callbacks,
         attempts: 0,
       };
       // using serialize library as default JSON.stringify mangles with function/callback serialization

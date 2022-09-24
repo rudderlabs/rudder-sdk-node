@@ -158,6 +158,7 @@ test("enqueue - stringify anonymousId", (t) => {
 
   client.screen(
     {
+      // eslint-disable-next-line no-loss-of-precision
       anonymousId: 157963456373623802,
       name: "screen name",
     },

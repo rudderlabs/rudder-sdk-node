@@ -11,7 +11,10 @@ const client = new Rudderanalytics(writeKey, `${dataPlaneURL}/v1/batch`, {
  */
 async function test() {
   // promisify the flush method
-  const flush = () => new Promise((resolve) => client.flush(resolve));
+  const flush = () =>
+    new Promise((resolve) => {
+      client.flush(resolve);
+    });
 
   // call RS client methods as normal –
   // no promisify or await needed and called concurrently

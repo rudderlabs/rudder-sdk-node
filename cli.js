@@ -2,9 +2,9 @@
 
 const program = require("commander");
 const Analytics = require(".");
-const pkg = require("./package");
+const pkg = require("./package.json");
 
-const toObject = str => JSON.parse(str);
+const toObject = (str) => JSON.parse(str);
 
 // node cli.js -w "write-key" -h "http://localhost" -t "identify" -u 'id
 program
@@ -72,7 +72,7 @@ const previousId = program.previousId;
 
 const run = (method, args) => {
   const analytics = new Analytics(writeKey, host, { flushAt: 1 });
-  analytics[method](args, err => {
+  analytics[method](args, (err) => {
     if (err) {
       console.error(err.stack);
       process.exit(1);
@@ -88,7 +88,7 @@ switch (type) {
       userId,
       anonymousId,
       context,
-      integrations
+      integrations,
     });
     break;
   case "page":
@@ -98,7 +98,7 @@ switch (type) {
       userId,
       anonymousId,
       context,
-      integrations
+      integrations,
     });
     break;
   case "screen":
@@ -108,7 +108,7 @@ switch (type) {
       userId,
       anonymousId,
       context,
-      integrations
+      integrations,
     });
     break;
   case "identify":
@@ -117,7 +117,7 @@ switch (type) {
       userId,
       anonymousId,
       context,
-      integrations
+      integrations,
     });
     break;
   case "group":
@@ -127,7 +127,7 @@ switch (type) {
       userId,
       anonymousId,
       context,
-      integrations
+      integrations,
     });
     break;
   case "alias":
@@ -136,7 +136,7 @@ switch (type) {
       userId,
       anonymousId,
       context,
-      integrations
+      integrations,
     });
     break;
   default:

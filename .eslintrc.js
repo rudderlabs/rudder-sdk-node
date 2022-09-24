@@ -21,6 +21,7 @@ module.exports = {
     "no-underscore-dangle": "off",
     "class-methods-use-this": "off",
     "consistent-return": "off",
-    "import/no-extraneous-dependencies": "off"
-  }
+    "import/no-extraneous-dependencies": "off",
+    "no-eval": "off", // required for serialize-javascript deserialization
+  },
 };
