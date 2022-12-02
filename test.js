@@ -1,13 +1,14 @@
-import { spy, stub } from "sinon";
-import express from "express";
-import delay from "delay";
-import auth from "basic-auth";
-import pify from "pify";
-import test from "ava";
-import Analytics from ".";
-import { version } from "./package.json";
+import Sinon, { spy, stub } from 'sinon'
+import bodyParser from 'body-parser'
+import express from 'express'
+import delay from 'delay'
+import auth from 'basic-auth'
+import pify from "pify"
+import test from 'ava'
+import Analytics from '.'
+import { version } from './package'
 
-const noop = () => {};
+const noop = () => {}
 
 const context = {
   library: {
@@ -16,11 +17,13 @@ const context = {
   },
 };
 
-const metadata = { nodeVersion: process.versions.node };
-const port = 4063;
+const metadata = { nodeVersion: process.versions.node }
+const port = 4063
+const separateAxiosClientPort = 4064
+const retryCount = 5
 
 const createClient = (options) => {
-  options = { ...options };
+  options = { ...options, logLevel: 'error' };
 
   const client = new Analytics("key", `http://localhost:${port}`, options);
   // const client = new Analytics("key", `http://localhost:${port}`, options);
@@ -30,7 +33,8 @@ const createClient = (options) => {
   return client;
 };
 
-test.before.cb((t) => {
+test.before.cb(t => {
+  let count = 0
   express()
     .use(express.json())
     .post("/", (req, res) => {
@@ -61,17 +65,38 @@ test.before.cb((t) => {
       }
 
       // console.log("=== response===", JSON.stringify(req.body));
-      res.json(req.body);
+      // res.json(req.body);
+      if (batch[0] === 'axios-retry') {
+        if (count++ === retryCount) return res.json({})
+        return res.status(503).json({
+          error: { message: 'Service Unavailable' }
+        })
+      }
+
+      if (batch[0] === 'axios-retry-forever') {
+        return res.status(503).json({
+          error: { message: 'Service Unavailable' }
+        })
+      }
+
+      res.json({})
     })
     .listen(port, t.end);
 });
 
-test("expose a constructor", (t) => {
-  t.is(typeof Analytics, "function");
-});
+test.after(() => {
+  Sinon.restore()
+})
+
+test('expose a constructor', t => {
+  t.is(typeof Analytics, 'function')
+})
 
 test("require a write key", (t) => {
-  t.throws(() => new Analytics(), "You must pass your project's write key.");
+  t.throws(
+    () => new Analytics(),
+    "You must pass your RudderStack project's write key."
+  );
 });
 
 test("create a queue", (t) => {
@@ -80,7 +105,7 @@ test("create a queue", (t) => {
   t.deepEqual(client.queue, []);
 });
 
-test("default options", (t) => {
+test("require a data plane url", (t) => {
   t.throws(() => new Analytics("key"), "You must pass your data plane url.");
 });
 
@@ -90,7 +115,7 @@ test("remove trailing slashes from `host`", (t) => {
   t.is(client.host, "http://google.com");
   t.is(client.writeKey, "key");
   t.is(client.flushAt, 20);
-  t.is(client.flushInterval, 20000);
+  t.is(client.flushInterval, 10000);
 });
 
 test("overwrite defaults with options", (t) => {
@@ -255,6 +280,21 @@ test("enqueue - don't reset an existing timer", async (t) => {
 
   t.true(client.flush.calledOnce);
 });
+test('enqueue - prevent flushing through time interval when already flushed by flushAt', async t => {
+  const client = createClient({ flushAt: 2, flushInterval: 10 })
+  client.flushed = false
+  spy(client, 'flush')
+
+  client.enqueue('type', {})
+  t.true(client.flush.calledOnce)
+
+  client.enqueue('type', {})
+  client.enqueue('type', {})
+  t.true(client.flush.calledTwice)
+
+  await delay(10)
+  t.true(client.flush.calledTwice)
+});
 
 test("enqueue - extend context", (t) => {
   const client = createClient();
@@ -292,23 +332,90 @@ test("flush - don't fail when queue is empty", async (t) => {
   await t.notThrows(client.flush());
 });
 
-test("flush - respond with an error", async (t) => {
-  const client = createClient();
-  const callback = spy();
+test('flush - send messages', async t => {
+  const client = createClient({ flushAt: 2 })
+
+  const callbackA = spy()
+  const callbackB = spy()
+  const callbackC = spy()
 
   client.queue = [
     {
-      message: "error",
-      callback,
+      message: 'a',
+      callback: callbackA
     },
-  ];
+    {
+      message: 'b',
+      callback: callbackB
+    },
+    {
+      message: 'c',
+      callback: callbackC
+    }
+  ]
 
-  await t.throws(client.flush(), "Bad Request");
-});
+  const data = await client.flush()
+  t.deepEqual(Object.keys(data), ['batch', 'timestamp', 'sentAt'])
+  t.deepEqual(data.batch, ['a', 'b'])
+  t.true(data.timestamp instanceof Date)
+  t.true(data.sentAt instanceof Date)
+  setImmediate(() => {
+    t.true(callbackA.calledOnce)
+    t.true(callbackB.calledOnce)
+    t.false(callbackC.called)
+  })
+})
 
-test("flush - time out if configured", async (t) => {
-  const client = createClient({ timeout: 500 });
-  const callback = spy();
+test.only('flush - respond with an error', async t => {
+  const client = createClient()
+  const callback = spy()
+
+  client.queue = [
+    {
+      message: 'error',
+      callback
+    }
+  ]
+
+  await t.throws(client.flush(), 'Bad Request')
+})
+
+test('flush - do not throw on axios failure if errorHandler option is specified', async t => {
+  const errorHandler = spy()
+  const client = createClient({ errorHandler })
+  const callback = spy()
+
+  client.queue = [
+    {
+      message: 'error',
+      callback
+    }
+  ]
+
+  await t.notThrows(client.flush())
+  t.true(errorHandler.calledOnce)
+})
+
+test('flush - evoke callback when errorHandler option is specified', async t => {
+  const errorHandler = spy()
+  const client = createClient({ errorHandler })
+  const callback = spy()
+
+  client.queue = [
+    {
+      message: 'error',
+      callback
+    }
+  ]
+
+  await t.notThrows(client.flush())
+  await delay(5)
+  t.true(callback.calledOnce)
+})
+
+test('flush - time out if configured', async t => {
+  const client = createClient({ timeout: 500 })
+  const callback = spy()
 
   client.queue = [
     {
@@ -336,9 +443,41 @@ test("flush - skip when client is disabled", async (t) => {
   t.false(callback.called);
 });
 
-test("identify - enqueue a message", (t) => {
-  const client = createClient();
-  stub(client, "enqueue");
+test('flush - flush when reaches max payload size', async t => {
+  const client = createClient({ flushAt: 1000 })
+  client.flush = spy()
+
+  // each of these messages when stringified to json has 220-ish bytes
+  // to satisfy our default limit of 1024*500 bytes we need less than 2600 of those messages
+  const event = {
+    userId: 1,
+    event: 'event'
+  }
+  for (let i = 0; i < 2600; i++) {
+    client.track(event)
+  }
+
+  t.true(client.flush.called)
+})
+
+test('flush - wont flush when no flush condition has meet', async t => {
+  const client = createClient({ flushAt: 1000, maxQueueSize: 1024 * 1000 })
+  client.flush = spy()
+
+  const event = {
+    userId: 1,
+    event: 'event'
+  }
+  for (let i = 0; i < 150; i++) {
+    client.track(event)
+  }
+
+  t.false(client.flush.called)
+})
+
+test('identify - enqueue a message', t => {
+  const client = createClient()
+  stub(client, 'enqueue')
 
   const message = { userId: "id" };
   client.identify(message, noop);
@@ -546,19 +685,103 @@ test("isErrorRetryable", (t) => {
   t.false(client._isErrorRetryable({ response: { status: 200 } }));
 });
 
-test("allows messages > 32kb", (t) => {
-  const client = createClient();
+test('dont allow messages > 32kb', t => {
+  const client = createClient()
 
   const event = {
     userId: 1,
-    event: "event",
-    properties: {},
-  };
-  for (var i = 0; i < 100; i++) {
-    event.properties[i] = "a";
+    event: 'event',
+    properties: {}
+  }
+  for (var i = 0; i < 10000; i++) {
+    event.properties[i] = 'a'
   }
 
-  t.notThrows(() => {
-    client.track(event, noop);
-  });
-});
+  t.throws(() => {
+    client.track(event, noop)
+  })
+})
+
+test("ensure that failed requests are retried", async (t) => {
+  const client = createClient({ retryCount })
+  const callback = spy()
+
+  client.queue = [
+    {
+      message: 'axios-retry',
+      callback
+    }
+  ]
+
+  await t.notThrows(client.flush())
+})
+
+test("ensure that failed requests are not retried forever", async (t) => {
+  const client = createClient()
+  const callback = spy()
+
+  client.queue = [
+    {
+      message: 'axios-retry-forever',
+      callback
+    }
+  ]
+
+  await t.throws(client.flush())
+})
+
+// test('ensure we can pass our own axios instance', async t => {
+//   const axios = require('axios')
+//   const myAxiosInstance = axios.create()
+//   const stubAxiosPost = stub(myAxiosInstance, 'post').resolves()
+//   const client = createClient({
+//     axiosInstance: myAxiosInstance,
+//     host: 'https://my-dummy-host.com',
+//     path: '/test/path'
+//   })
+
+//   const callback = spy()
+//   client.queue = [
+//     {
+//       message: 'something',
+//       callback
+//     }
+//   ]
+
+//   client.flush()
+
+//   t.true(stubAxiosPost.called)
+//   t.true(stubAxiosPost.alwaysCalledWith('https://my-dummy-host.com/test/path'))
+// })
+
+test('ensure other axios clients are not impacted by axios-retry', async t => {
+  let client = createClient() // eslint-disable-line
+  const axios = require('axios')
+
+  let callCounter = 0
+
+  // Client will return a successful response for any requests beyond the first
+  const server = express()
+    .use(bodyParser.json())
+    .get('/v1/anotherEndpoint', (req, res) => {
+      if (callCounter > 0) {
+        res.status(200).send('Ok')
+      } else {
+        callCounter++
+        res.status(503).send('Service down')
+      }
+    })
+    .listen(separateAxiosClientPort)
+
+  await axios.get(`http://localhost:${separateAxiosClientPort}/v1/anotherEndpoint`)
+    .then(response => {
+      t.fail()
+    })
+    .catch(error => {
+      if (error) {
+        t.pass()
+      }
+    })
+
+  server.close()
+})
