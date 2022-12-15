@@ -17,14 +17,14 @@
     }
   ],
   "scripts": {
-    "dependencies": "yarn",
     "size": "size-limit",
     "build": "babel index.js --out-dir lib && cp package.json lib/ && cp readme.md lib/ && cp History.md lib/ && cp LICENSE.md lib/ && cp index.d.ts lib/",
     "test": "nyc --reporter=lcov --reporter=html --reporter=text ava --serial --verbose  > coverage.lcov",
     "lint": "eslint . --fix",
     "changelog": "auto-changelog -p -t keepachangelog -u true -l false --sort-commits date-desc ",
     "tsc": "tsc",
-    "generateHistory": "auto-changelog --package --output HISTORY.md --template keepachangelog"
+    "generateHistory": "auto-changelog --package --output HISTORY.md --template keepachangelog",
+    "check:security": "npm audit --recursive --audit-level=high"
   },
   "main": "index.js",
   "keywords": [
@@ -78,10 +78,24 @@
     "snyk": "^1.171.1",
     "standard": "^12.0.1"
   },
+  "overrides": {
+    "kind-of": "^6.0.3",
+    "lodash": "^4.17.19",
+    "set-value": "^2.0.1",
+    "yargs-parser": "^13.1.2",
+    "trim-newlines": "^3.0.1",
+    "minimist": "^1.2.6",
+    "glob-parent": "^5.1.2",
+    "ansi-regex": "^3.0.1"
+  },
   "resolutions": {
     "kind-of": "^6.0.3",
     "lodash": "^4.17.19",
     "set-value": "^2.0.1",
-    "yargs-parser": "^13.1.2"
+    "yargs-parser": "^13.1.2",
+    "trim-newlines": "^3.0.1",
+    "minimist": "^1.2.6",
+    "glob-parent": "^5.1.2",
+    "ansi-regex": "^3.0.1"
   }
 }
