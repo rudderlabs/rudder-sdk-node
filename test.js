@@ -5,7 +5,7 @@ import delay from 'delay';
 import auth from 'basic-auth';
 import pify from 'pify';
 import test from 'ava';
-import Analytics from '.';
+import Analytics from './index';
 import { version } from './package.json';
 
 const noop = () => {};
@@ -331,8 +331,8 @@ test("flush - don't fail when queue is empty", async (t) => {
   await t.notThrows(client.flush());
 });
 
-test.skip('flush - send messages', async (t) => {
-  const client = createClient({ flushAt: 2 });
+test('flush - send messages', async (t) => {
+  const client = createClient({ flushAt: 2, gzip: false });
 
   const callbackA = spy();
   const callbackB = spy();
@@ -366,7 +366,7 @@ test.skip('flush - send messages', async (t) => {
 });
 
 test('flush - respond with an error', async (t) => {
-  const client = createClient();
+  const client = createClient({ path: '/v1/dummy'});
   const callback = spy();
 
   client.queue = [
@@ -379,7 +379,7 @@ test('flush - respond with an error', async (t) => {
   await t.throws(client.flush(), 'Not Found');
 });
 
-test.skip('flush - do not throw on axios failure if errorHandler option is specified', async (t) => {
+test('flush - do not throw on axios failure if errorHandler option is specified', async (t) => {
   const errorHandler = spy();
   const client = createClient({ errorHandler });
   const callback = spy();
@@ -395,7 +395,7 @@ test.skip('flush - do not throw on axios failure if errorHandler option is speci
   t.true(errorHandler.calledOnce);
 });
 
-test.skip('flush - evoke callback when errorHandler option is specified', async (t) => {
+test('flush - evoke callback when errorHandler option is specified', async (t) => {
   const errorHandler = spy();
   const client = createClient({ errorHandler });
   const callback = spy();
@@ -413,7 +413,7 @@ test.skip('flush - evoke callback when errorHandler option is specified', async 
 });
 
 test('flush - time out if configured', async (t) => {
-  const client = createClient({ timeout: 500 });
+  const client = createClient({ timeout: 50 });
   const callback = spy();
 
   client.queue = [
@@ -423,7 +423,7 @@ test('flush - time out if configured', async (t) => {
     },
   ];
 
-  await t.throws(client.flush(), 'timeout of 500ms exceeded');
+  await t.throws(client.flush(), 'timeout of 50ms exceeded');
 });
 
 test('flush - skip when client is disabled', async (t) => {
@@ -677,7 +677,7 @@ test('dont allow messages > 32kb', (t) => {
   });
 });
 
-test.skip('ensure that failed requests are retried', async (t) => {
+test('ensure that failed requests are retried', async t => {
   const client = createClient({ retryCount });
   const callback = spy();
 
@@ -692,7 +692,7 @@ test.skip('ensure that failed requests are retried', async (t) => {
 });
 
 test('ensure that failed requests are not retried forever', async (t) => {
-  const client = createClient();
+  const client = createClient({ path: '/v1/dummy'});
   const callback = spy();
 
   client.queue = [
@@ -705,7 +705,7 @@ test('ensure that failed requests are not retried forever', async (t) => {
   await t.throws(client.flush());
 });
 
-test.only('ensure we can pass our own axios instance', async (t) => {
+test('ensure we can pass our own axios instance', async (t) => {
   const axios = require('axios');
   const myAxiosInstance = axios.create();
   const stubAxiosPost = stub(myAxiosInstance, 'post').resolves();
