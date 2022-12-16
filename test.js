@@ -705,7 +705,7 @@ test('ensure that failed requests are not retried forever', async (t) => {
   await t.throws(client.flush());
 });
 
-test.skip('ensure we can pass our own axios instance', async (t) => {
+test.only('ensure we can pass our own axios instance', async (t) => {
   const axios = require('axios');
   const myAxiosInstance = axios.create();
   const stubAxiosPost = stub(myAxiosInstance, 'post').resolves();
@@ -724,9 +724,8 @@ test.skip('ensure we can pass our own axios instance', async (t) => {
   ];
 
   client.flush();
-
   t.true(stubAxiosPost.called);
-  // t.true(stubAxiosPost.alwaysCalledWith('https://my-dummy-host.com/test/path'));
+  t.true(stubAxiosPost.alwaysCalledWith('https://my-dummy-host.com/test/path'));
 });
 
 test('ensure other axios clients are not impacted by axios-retry', async (t) => {
