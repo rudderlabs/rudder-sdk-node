@@ -32,6 +32,7 @@ class Analytics {
    * @param {Object} [options] (optional)
    *   @property {Number} [flushAt] (default: 20)
    *   @property {Number} [flushInterval] (default: 10000)
+   *   @property {String} [dataPlaneUrl] (default: 'https://hosted.rudderlabs.com')
    *   @property {String} [host] (default: 'https://hosted.rudderlabs.com')
    *   @property {Boolean} [enable] (default: true)
    *   @property {Object} [axiosConfig] (optional)
@@ -53,7 +54,9 @@ class Analytics {
     this.pQueueOpts = undefined;
     this.pJobOpts = {};
     this.writeKey = writeKey;
-    this.host = removeSlash(options.host || 'https://hosted.rudderlabs.com');
+    this.host = removeSlash(
+      options.dataPlaneUrl || options.host || 'https://hosted.rudderlabs.com',
+    );
     this.path = removeSlash(options.path || '/v1/batch');
     let axiosInstance = options.axiosInstance;
     if (axiosInstance == null) {
