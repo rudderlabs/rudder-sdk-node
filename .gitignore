@@ -6,3 +6,4 @@ lib
 ./example/node_modules
 ./example/package-lock.json
 .idea/
+.DS_Store

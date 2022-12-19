@@ -34,7 +34,6 @@
     "@segment/loosely-validate-event": "^2.0.0",
     "axios": "0.26.0",
     "axios-retry": "^3.2.4",
-    "bull": "^4.7.0",
     "lodash.clonedeep": "^4.5.0",
     "lodash.isstring": "^4.0.1",
     "md5": "^2.3.0",
@@ -97,5 +96,8 @@
     "minimist": "^1.2.6",
     "glob-parent": "^5.1.2",
     "ansi-regex": "^3.0.1"
+  },
+  "optionalDependencies": {
+    "bull": "^4.7.0"
   }
 }

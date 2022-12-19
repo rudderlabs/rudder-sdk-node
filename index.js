@@ -4,7 +4,6 @@ const assert = require('assert');
 const removeSlash = require('remove-trailing-slash');
 const looselyValidate = require('@segment/loosely-validate-event');
 const serialize = require('serialize-javascript');
-const Queue = require('bull');
 const axios = require('axios');
 const axiosRetry = require('axios-retry');
 const ms = require('ms');
@@ -147,9 +146,15 @@ class Analytics {
       } else {
         // process the job after exponential delay, if it's the 0th attempt, setTimeout will fire immediately
         // max delay is 30 sec, it is mostly in sync with a bull queue job max lock time
-        setTimeout(function (axiosInstance, host, path) {
+        setTimeout(
+          function (axiosInstance, host, path, gzipOption) {
             const req = jobData.request;
             req.data.sentAt = new Date();
+
+            if (gzipOption) {
+              req.data = gzip(JSON.stringify(req.data));
+              req.headers['Content-Encoding'] = 'gzip';
+            }
             // if request succeeded, mark the job done and move to completed
             axiosInstance
               .post(`${host}${path}`, req.data, req)
@@ -167,7 +172,7 @@ class Analytics {
                   // if able to add, mark the earlier job done with push to completed with a msg
                   // if add to redis queue gives exception, not catching it
                   // in case of redis queue error, mark the job as failed ? i.e add the catch block in below promise ?
-                payloadQueue
+                  payloadQueue
                     .add({ eventData: serialize(jobData) }, { lifo: true })
                     .then((pushedJob) => {
                       done(
@@ -191,11 +196,12 @@ class Analytics {
                   done(err);
                 }
               });
-            },
-            Math.min(30000, 2 ** jobData.attempts * 1000),
-            this.axiosInstance,
-            this.host,
-            this.path
+          },
+          Math.min(30000, 2 ** jobData.attempts * 1000),
+          this.axiosInstance,
+          this.host,
+          this.path,
+          this.gzip,
         );
       }
     });
@@ -239,6 +245,8 @@ class Analytics {
       return;
     }
 
+    const Queue = require('bull');
+
     this.pQueueOpts = queueOpts || {};
     this.pQueueOpts.isMultiProcessor = this.pQueueOpts.isMultiProcessor || false;
     if (!this.pQueueOpts.redisOpts) {
@@ -247,7 +255,7 @@ class Analytics {
     this.pJobOpts = this.pQueueOpts.jobOpts || {};
     this.pQueue = new Queue(this.pQueueOpts.queueName || 'rudderEventsQueue', {
       redis: this.pQueueOpts.redisOpts,
-      prefix: '{' + this.pQueueOpts.prefix + '}' || '{rudder}',
+      prefix: this.pQueueOpts.prefix ? `{${this.pQueueOpts.prefix}}` : '{rudder}',
     });
 
     this.logger.debug('isMultiProcessor: ' + this.pQueueOpts.isMultiProcessor);
@@ -616,7 +624,7 @@ class Analytics {
 
     // If gzip feature is enabled compress the request payload
     // Note: the server version should be 1.4 and above
-    if (this.gzip) {
+    if (this.gzip && !this.pQueue) {
       data = gzip(JSON.stringify(data));
       headers['Content-Encoding'] = 'gzip';
     }
@@ -673,7 +681,7 @@ class Analytics {
             err.response &&
             err.response.status === 404 &&
             process.env.AVA_MODE_ON &&
-            this.path === "/v1/batch" &&
+            this.path === '/v1/batch' &&
             !this.timeout;
 
           if (typeof this.errorHandler === 'function') {
