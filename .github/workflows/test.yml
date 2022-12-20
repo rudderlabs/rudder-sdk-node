@@ -31,7 +31,7 @@ jobs:
         run: |
           npm ci
           npm run test:ci
-          npm run check:lint
+          npm run check:lint:ci
 
       # - name: SonarCloud Scan
       #   uses: SonarSource/sonarcloud-github-action@master

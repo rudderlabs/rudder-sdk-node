@@ -26,7 +26,7 @@
     "tsc": "tsc",
     "generateHistory": "auto-changelog --package --output HISTORY.md --template keepachangelog",
     "check:lint": "eslint index.js",
-    "check:lint:ci": "eslint \"src/**/*.js\" -f json -o reports/eslint.json || exit 0",
+    "check:lint:ci": "eslint index.js -f json -o reports/eslint.json || exit 0",
     "check:circular": "madge --circular --extensions js index.js || exit 0",
     "check:duplicates": "jscpd index.js --threshold 5",
     "check:security": "npm audit --recursive --audit-level=high",
