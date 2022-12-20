@@ -7,3 +7,4 @@ lib
 ./example/package-lock.json
 .idea/
 .DS_Store
+.eslintcache
