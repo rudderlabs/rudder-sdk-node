@@ -98,6 +98,6 @@
     "ansi-regex": "^3.0.1"
   },
   "optionalDependencies": {
-    "bull": "^4.7.0"
+    "bull": "^4.10.2"
   }
 }
