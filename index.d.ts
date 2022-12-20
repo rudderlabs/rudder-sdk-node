@@ -31,14 +31,22 @@ export interface integrationOptions {
 /**
  * Represents the constructor options object
  * Example usages:
- * constructorOptions { flushAt: 20, "flushInterval": 20000, "enable": true, "maxInternalQueueSize":20000, "logLevel": "info"/"debug"/"error"/"silly"}
+ * constructorOptions { flushAt: 20, "flushInterval": 20000, "enable": true, "maxQueueSize":20000, "logLevel": "info"/"debug"/"error"/"silly"}
  */
 export interface constructorOptions {
   flushAt?: number;
   flushInterval?: number;
   enable?: boolean;
-  maxInternalQueueSize?: number;
+  maxQueueSize?: number;
   logLevel?: string;
+  host?: string;
+  dataPlaneUrl?: string;
+  axiosConfig?: any;
+  axiosInstance?: any;
+  axiosRetryConfig?: any;
+  retryCount?: number;
+  errorHandler?: () => void;
+  gzip?: boolean;
 }
 
 /**
@@ -47,22 +55,24 @@ export interface constructorOptions {
 export type apiCallback = () => void;
 declare class Analytics {
   /**
-   * Initialize a new `Analytics` with your Segment project's `writeKey` and an
+   * Initialize a new `Analytics` with your RudderStack project's `writeKey` and an
    * optional dictionary of `options`.
    *
    * @param {String} writeKey
-   * @param {String} dataPlaneURL
-   * @param {Object=} options (optional)
-   * @param {Number=20} options.flushAt (default: 20)
-   * @param {Number=20000} options.flushInterval (default: 20000)
-   * @param {Boolean=true} options.enable (default: true)
-   * @param {Number=20000} options.maxInternalQueueSize
+   * @param {Object} [options] (optional)
+   *   @property {Number} [flushAt] (default: 20)
+   *   @property {Number} [flushInterval] (default: 10000)
+   *   @property {String} [dataPlaneUrl] (default: 'https://hosted.rudderlabs.com')
+   *   @property {String} [host] (default: 'https://hosted.rudderlabs.com')
+   *   @property {Boolean} [enable] (default: true)
+   *   @property {Object} [axiosConfig] (optional)
+   *   @property {Object} [axiosInstance] (default: axios.create(options.axiosConfig))
+   *   @property {Object} [axiosRetryConfig] (optional)
+   *   @property {Number} [retryCount] (default: 3)
+   *   @property {Function} [errorHandler] (optional)
+   *   @property {Boolean} [gzip] (default: true)
    */
-  constructor(
-    writeKey: string,
-    dataPlaneURL: string,
-    options?: constructorOptions
-  );
+  constructor(writeKey: string, options?: constructorOptions);
 
   /**
    *
@@ -111,7 +121,7 @@ declare class Analytics {
         maxAttempts?: number;
       };
     },
-    callback: (error?: Error | string) => void
+    callback: (error?: Error | string) => void,
   ): void;
 
   /**
@@ -136,7 +146,7 @@ declare class Analytics {
       integrations?: integrationOptions;
       timestamp?: Date;
     },
-    callback?: apiCallback
+    callback?: apiCallback,
   ): Analytics;
   /**
    * Send a group `message`.
@@ -162,7 +172,7 @@ declare class Analytics {
       integrations?: integrationOptions;
       timestamp?: Date;
     },
-    callback?: apiCallback
+    callback?: apiCallback,
   ): Analytics;
   /**
    * Send a track `message`.
@@ -188,7 +198,7 @@ declare class Analytics {
       integrations?: integrationOptions;
       timestamp?: Date;
     },
-    callback?: apiCallback
+    callback?: apiCallback,
   ): Analytics;
   /**
    * Send a page `message`.
@@ -214,7 +224,7 @@ declare class Analytics {
       integrations?: integrationOptions;
       timestamp?: Date;
     },
-    callback?: apiCallback
+    callback?: apiCallback,
   ): Analytics;
 
   /**
@@ -241,7 +251,7 @@ declare class Analytics {
       integrations?: integrationOptions;
       timestamp?: Date;
     },
-    callback?: apiCallback
+    callback?: apiCallback,
   ): Analytics;
 
   /**
