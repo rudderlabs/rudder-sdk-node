@@ -335,7 +335,18 @@ class Analytics {
   }
 
   _validate(message, type) {
-    looselyValidate(message, type);
+    try {
+      looselyValidate(message, type);
+    } catch (e) {
+      if (e.message === 'Your message must be < 32kb.') {
+        this.logger.info(
+          'Your message must be < 32kb. This is currently surfaced as a warning. Please update your code',
+          message,
+        );
+        return;
+      }
+      throw e;
+    }
   }
 
   /**
