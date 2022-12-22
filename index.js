@@ -508,11 +508,8 @@ class Analytics {
     }
 
     if (!lMessage.messageId) {
-      // We md5 the messaage to add more randomness. This is primarily meant
-      // for use in the browser where the uuid package falls back to Math.random()
-      // which is not a great source of randomness.
-      // Borrowed from analytics.js (https://github.com/segment-integrations/analytics.js-integration-segmentio/blob/a20d2a2d222aeb3ab2a8c7e72280f1df2618440e/lib/index.js#L255-L256).
-      lMessage.messageId = `node-${md5(JSON.stringify(lMessage))}-${uuid()}`;
+      // Previously `node-${md5(JSON.stringify(lMessage))}-${uuid()}` this was being used
+      lMessage.messageId = uuid();
     }
 
     // Historically this library has accepted strings and numbers as IDs.

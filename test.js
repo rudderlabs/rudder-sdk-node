@@ -23,7 +23,10 @@ const separateAxiosClientPort = 4064;
 const retryCount = 5;
 
 const createClient = (options) => {
-  const newOptions = { ...options, logLevel: 'error' };
+  const newOptions = { ...options, logLevel: 'error', gzip: false };
+  if (!newOptions.host && !newOptions.dataPlaneUrl) {
+    newOptions.dataPlaneUrl = `http://localhost:${port}`;
+  }
   const client = new Analytics('key', newOptions);
   // const client = new Analytics("key", `http://localhost:${port}`, options);
   client.flush = pify(client.flush.bind(client));
@@ -36,13 +39,13 @@ test.before.cb((t) => {
   let count = 0;
   express()
     .use(express.json())
-    .post('/', (req, res) => {
+    .post('/v1/batch', (req, res) => {
       const batch = req.body.batch;
 
       const { name: writeKey } = auth(req);
       if (!writeKey) {
-        return res.status(400).json({
-          error: { message: 'missing write key' },
+        return res.status(404).json({
+          error: { message: 'Not Found' },
         });
       }
 
@@ -54,7 +57,7 @@ test.before.cb((t) => {
       }
 
       if (batch[0] === 'error') {
-        return res.status(400).json({
+        return res.status(404).json({
           error: { message: 'error' },
         });
       }
@@ -144,7 +147,10 @@ test('enqueue - add a message to the queue', (t) => {
 
   const item = client.queue.pop();
   t.is(typeof item.message.messageId, 'string');
-  t.regex(item.message.messageId, /node-[a-zA-Z0-9]{32}/);
+  t.regex(
+    item.message.messageId,
+    /[0-9a-fA-F]{8}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{12}/,
+  );
   t.deepEqual(item, {
     message: {
       originalTimestamp,
