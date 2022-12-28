@@ -7,3 +7,4 @@ stats/
 *.md
 *.d.ts
 .nyc_output
+examples/

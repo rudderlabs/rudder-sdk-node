@@ -1,9 +1,10 @@
 const Rudderanalytics = require('@rudderstack/rudder-sdk-node'); // For v1.x.x
+require('dotenv').config({ path: '../../.env' });
 
-const writeKey = 'WRITE_KEY'; // replace with your write-key
-const dataPlaneURL = 'DATA_PLANE_URL'; // replace with your data plane url
+const writeKey = process.env.WRITE_KEY;
+const dataPlaneUrl = process.env.DATAPLANE_URL;
 
-const client = new Rudderanalytics(writeKey, `${dataPlaneURL}/v1/batch`, {
+const client = new Rudderanalytics(writeKey, `${dataPlaneUrl}/v1/batch`, {
   // flushAt: 2,
 });
 /**
