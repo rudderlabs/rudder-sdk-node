@@ -200,6 +200,7 @@ declare class Analytics {
     },
     callback?: apiCallback,
   ): Analytics;
+
   /**
    * Send a page `message`.
    *
@@ -215,6 +216,33 @@ declare class Analytics {
    * @return {Analytics}
    */
   page(
+    message: {
+      name: string;
+      userId?: string;
+      anonymousId?: string;
+      context?: apiObject;
+      properties?: apiObject;
+      integrations?: integrationOptions;
+      timestamp?: Date;
+    },
+    callback?: apiCallback,
+  ): Analytics;
+
+  /**
+   * Send a screen `message`.
+   *
+   * @param {Object} message
+   * @param {String} message.name
+   * @param {String=} message.userId (optional)
+   * @param {String=} message.anonymousId (optional)
+   * @param {Object=} message.context (optional)
+   * @param {Object=} message.properties (optional)
+   * @param {Object=} message.integrations (optional)
+   * @param {Date=} message.timestamp (optional)
+   * @param {Function=} callback (optional)
+   * @return {Analytics}
+   */
+  screen(
     message: {
       name: string;
       userId?: string;
