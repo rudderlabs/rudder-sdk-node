@@ -39,8 +39,9 @@ export interface constructorOptions {
   enable?: boolean;
   maxQueueSize?: number;
   logLevel?: string;
-  host?: string;
   dataPlaneUrl?: string;
+  host?: string;
+  path?: string;
   axiosConfig?: any;
   axiosInstance?: any;
   axiosRetryConfig?: any;
@@ -62,8 +63,11 @@ declare class Analytics {
    * @param {Object} [options] (optional)
    *   @property {Number} [flushAt] (default: 20)
    *   @property {Number} [flushInterval] (default: 10000)
+   *   @property {Number} [maxQueueSize] (default: 500 kb)
+   *   @property {String} [logLevel] (default: 'info')
    *   @property {String} [dataPlaneUrl] (default: 'https://hosted.rudderlabs.com')
    *   @property {String} [host] (default: 'https://hosted.rudderlabs.com')
+   *   @property {String} [path] (default: '/v1/batch')
    *   @property {Boolean} [enable] (default: true)
    *   @property {Object} [axiosConfig] (optional)
    *   @property {Object} [axiosInstance] (default: axios.create(options.axiosConfig))

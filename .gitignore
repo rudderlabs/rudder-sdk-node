@@ -3,10 +3,7 @@ coverage
 .nyc_output
 coverage.lcov
 lib
-examples/async-flush/node_modules
-examples/async-flush/package-lock.json
-examples/sample-app/node_modules
-examples/sample-app/package-lock.json
+examples/**/package-lock.json
 .idea/
 .DS_Store
 .eslintcache

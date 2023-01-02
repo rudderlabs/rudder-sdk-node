@@ -34,3 +34,7 @@ jobs:
       - name: Execute security checks
         run: |
           npm run check:security
+
+      - name: Generate build
+        run: |
+          npm run build
