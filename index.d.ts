@@ -38,6 +38,7 @@ export interface constructorOptions {
   flushInterval?: number;
   enable?: boolean;
   maxQueueSize?: number;
+  maxInternalQueueSize?: number;
   logLevel?: string;
   dataPlaneUrl?: string;
   host?: string;
@@ -64,6 +65,7 @@ declare class Analytics {
    *   @property {Number} [flushAt] (default: 20)
    *   @property {Number} [flushInterval] (default: 10000)
    *   @property {Number} [maxQueueSize] (default: 500 kb)
+   *   @property {Number} [maxInternalQueueSize] (default: 20000)
    *   @property {String} [logLevel] (default: 'info')
    *   @property {String} [dataPlaneUrl] (default: 'https://hosted.rudderlabs.com')
    *   @property {String} [host] (default: 'https://hosted.rudderlabs.com')

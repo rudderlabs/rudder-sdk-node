@@ -33,6 +33,7 @@ class Analytics {
    *   @property {Number} [flushAt] (default: 20)
    *   @property {Number} [flushInterval] (default: 10000)
    *   @property {Number} [maxQueueSize] (default: 500 kb)
+   *   @property {Number} [maxInternalQueueSize] (default: 20000)
    *   @property {String} [logLevel] (default: 'info')
    *   @property {String} [dataPlaneUrl] (default: 'https://hosted.rudderlabs.com')
    *   @property {String} [host] (default: 'https://hosted.rudderlabs.com')
@@ -69,6 +70,7 @@ class Analytics {
     this.timeout = options.timeout || false;
     this.flushAt = Math.max(options.flushAt, 1) || 20;
     this.maxQueueSize = options.maxQueueSize || 1024 * 450; // 500kb is the API limit, if we approach the limit i.e., 450kb, we'll flush
+    this.maxInternalQueueSize = options.maxInternalQueueSize || 20000;
     this.flushInterval = options.flushInterval || 10000;
     this.flushed = false;
     this.errorHandler = options.errorHandler;
@@ -481,6 +483,15 @@ class Analytics {
    */
 
   enqueue(type, message, callback) {
+    if (this.queue.length >= this.maxInternalQueueSize) {
+      this.logger.error(
+        'not adding events for processing as queue size ' +
+          this.queue.length +
+          ' >= than max configuration ' +
+          this.maxInternalQueueSize,
+      );
+      return;
+    }
     // Clone the incoming message object
     // before altering the data
     let lMessage = cloneDeep(message);
