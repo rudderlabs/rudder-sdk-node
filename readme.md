@@ -44,7 +44,7 @@ const client = new Analytics(WRITE_KEY, {
 });
 ```
 
-## Configurable Parameters
+## Configurable Initialization Parameters
 
 Below parameters are optional and can be passed during SDK initialization.
 
