@@ -39,7 +39,6 @@ To create a global RudderStack client object and use it for the subsequent event
 ```javascript
 const Analytics = require('@rudderstack/rudder-sdk-node');
 
-// we need the batch endpoint of the Rudder server you are running
 const client = new Analytics(WRITE_KEY, {
   dataPlaneUrl: DATA_PLANE_URL, // default: https://hosted.rudderlabs.com
 });
