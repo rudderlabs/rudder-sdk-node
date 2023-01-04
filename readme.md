@@ -37,11 +37,32 @@ $ npm install @rudderstack/rudder-sdk-node
 To create a global RudderStack client object and use it for the subsequent event calls, run the following snippet:
 
 ```javascript
-const Analytics = require("@rudderstack/rudder-sdk-node");
+const Analytics = require('@rudderstack/rudder-sdk-node');
 
-// we need the batch endpoint of the Rudder server you are running
-const client = new Analytics(WRITE_KEY, DATA_PLANE_URL/v1/batch");
+const client = new Analytics(WRITE_KEY, {
+  dataPlaneUrl: DATA_PLANE_URL, // default: https://hosted.rudderlabs.com
+});
 ```
+
+## SDK Initialization Options
+
+Below parameters are optional and can be passed during SDK initialization.
+
+| Name                   | Type     | Default value                   | Description                                                                                       |
+| :--------------------- | :------- | :------------------------------ | :------------------------------------------------------------------------------------------------ |
+| `dataPlaneUrl`         | String   | `https://hosted.rudderlabs.com` | The data plane URL.                                                                               |
+| `path`                 | String   | `/v1/batch`                     | Path to batch endpoint.                                                                           |
+| `flushAt`              | Number   | 20                              | The number of events to be flushed when reached this limit.                                       |
+| `flushInterval`        | Number   | 10000                           | The maximum timespan (in milliseconds) after which the events from the in-memory queue is flushed |
+| `maxQueueSize`         | Number   | 460800(500kb)                   | Maximum payload size of a batch request                                                           |
+| `maxInternalQueueSize` | Number   | 20000                           | The maximum length of the in-memory queue                                                         |
+| `logLevel`             | String   | 'info'                          | Log level. `Ex: 'debug', 'error'`                                                                 |
+| `axiosConfig`          | Object   | N/A                             | Axios config                                                                                      |
+| `axiosInstance`        | Object   | N/A                             | Axios instance                                                                                    |
+| `axiosRetryConfig`     | Object   | N/A                             | Axios retry configuration                                                                         |
+| `retryCount`           | Number   | 3                               | Number of times requests will be retried by axios if failed                                       |
+| `errorHandler`         | Function | N/A                             | A function that will be called if request to server failed                                        |
+| `gzip`                 | Boolean  | true                            | Whether to compress request with gzip or not                                                      |
 
 ## Supported calls
 
@@ -54,15 +75,15 @@ Refer to the [**SDK documentation**](https://www.rudderstack.com/docs/stream-sou
 RudderStack has a data persistence feature to persist the events in Redis, leading to better event delivery guarantees. Also, the SDK can retry event delivery multiple times as the queue is maintained in a different process space(Redis).
 
 | To use this feature, you will need to host a Redis server and use it as the intermediary data storage queue. |
-| :------------------------------------------------------------------------------------------------------------|
+| :----------------------------------------------------------------------------------------------------------- |
 
 A sample SDK initialization is shown below:
 
 ```
 const client = new Analytics(
   "write_key",
-  "server_url/v1/batch",
   {
+    dataPlaneUrl: DATA_PLANE_URL // default: https://hosted.rudderlabs.com with default path set to /v1/batch
     flushAt: <number> = 20,
     flushInterval: <ms> = 20000
     maxInternalQueueSize: <number> = 20000 // the max number of elements that the SDK can hold in memory,
@@ -72,7 +93,7 @@ const client = new Analytics(
 client.createPersistenceQueue({ redisOpts: { host: "localhost" } }, err => {})
 ```
 
-To initialize the data persistence queue, you need to call the `createPersistenceQueue` method which takes two parameters as input - `queueOpts` and a `callback`. The `createPersistenceQueue` method will initialize a Redis list by calling [Bull's](https://github.com/OptimalBits/bull) utility methods. 
+To initialize the data persistence queue, you need to call the `createPersistenceQueue` method which takes two parameters as input - `queueOpts` and a `callback`. The `createPersistenceQueue` method will initialize a Redis list by calling [Bull's](https://github.com/OptimalBits/bull) utility methods.
 
 > **If you do not call `createPersistenceQueue` after initializing the SDK, the SDK will not implement data persistence.**
 
