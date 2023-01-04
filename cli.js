@@ -6,11 +6,11 @@ const pkg = require('./package');
 
 const toObject = (str) => JSON.parse(str);
 
-// node cli.js -w "write-key" -h "http://localhost" -t "identify" -u 'id
+// node cli.js -w "write-key" -d "http://localhost" -t "identify" -u 'id'
 program
   .version(pkg.version)
   .option('-w, --writeKey <key>', 'the write key to use')
-  .option('-h, --host <host>', 'the API hostname to use')
+  .option('-d, --dataPlaneUrl <dataPlaneUrl>', 'the API hostname to use')
   .option('-t, --type <type>', 'the message type')
 
   .option('-u, --userId <id>', 'the user id to send the event as')
@@ -39,7 +39,7 @@ if (program.args.length !== 0) {
 const options = program.opts();
 const {
   writeKey,
-  host,
+  dataPlaneUrl,
   type,
   userId,
   anonymousId,
@@ -54,7 +54,7 @@ const {
 } = options;
 
 const run = (method, args) => {
-  const analytics = new Analytics(writeKey, { host, flushAt: 1 });
+  const analytics = new Analytics(writeKey, { dataPlaneUrl, flushAt: 1 });
   analytics[method](args, (err) => {
     if (err) {
       console.error(err.stack);
