@@ -1,22 +1,23 @@
-const assert = require("assert");
-const removeSlash = require("remove-trailing-slash");
-const looselyValidate = require("@segment/loosely-validate-event");
-const serialize = require("serialize-javascript");
-const Queue = require("bull");
-const axios = require("axios");
-const axiosRetry = require("axios-retry");
-const ms = require("ms");
-const { v4: uuidv4 } = require("uuid");
-const md5 = require("md5");
-const isString = require("lodash.isstring");
-const cloneDeep = require("lodash.clonedeep");
-const winston = require("winston");
-const version = require("./package.json").version;
+/* eslint-disable no-eval */
 
+const assert = require('assert');
+const removeSlash = require('remove-trailing-slash');
+const looselyValidate = require('@segment/loosely-validate-event');
+const serialize = require('serialize-javascript');
+const axios = require('axios');
+const axiosRetry = require('axios-retry');
+const ms = require('ms');
+const { v4: uuid } = require('uuid');
+const md5 = require('md5');
+const isString = require('lodash.isstring');
+const cloneDeep = require('lodash.clonedeep');
+const winston = require('winston');
+const zlib = require('zlib');
+const version = require('./package.json').version;
+
+const gzip = zlib.gzipSync;
 const logFormat = winston.format.printf(
-  ({ level, message, label, timestamp }) => {
-    return `${timestamp} [${label}] ${level}: ${message}`;
-  }
+  ({ level, message, label, timestamp }) => `${timestamp} [${label}] ${level}: ${message}`,
 );
 
 const setImmediate = global.setImmediate || process.nextTick.bind(process);
@@ -28,52 +29,83 @@ class Analytics {
    * optional dictionary of `options`.
    *
    * @param {String} writeKey
-   * @param {String} dataPlaneURL
-   * @param {Object=} options (optional)
-   * @param {Number=20} options.flushAt (default: 20)
-   * @param {Number=20000} options.flushInterval (default: 20000)
-   * @param {Boolean=true} options.enable (default: true)
-   * @param {Number=20000} options.maxInternalQueueSize
+   * @param {Object} [options] (optional)
+   *   @property {Number} [flushAt] (default: 20)
+   *   @property {Number} [flushInterval] (default: 10000)
+   *   @property {Number} [maxQueueSize] (default: 500 kb)
+   *   @property {Number} [maxInternalQueueSize] (default: 20000)
+   *   @property {String} [logLevel] (default: 'info')
+   *   @property {String} [dataPlaneUrl] (default: 'https://hosted.rudderlabs.com')
+   *   @property {String} [host] (default: 'https://hosted.rudderlabs.com')
+   *   @property {String} [path] (default: '/v1/batch')
+   *   @property {Boolean} [enable] (default: true)
+   *   @property {Object} [axiosConfig] (optional)
+   *   @property {Object} [axiosInstance] (default: axios.create(options.axiosConfig))
+   *   @property {Object} [axiosRetryConfig] (optional)
+   *   @property {Number} [retryCount] (default: 3)
+   *   @property {Function} [errorHandler] (optional)
+   *   @property {Boolean} [gzip] (default: true)
    */
 
-  constructor(writeKey, dataPlaneURL, options) {
+  constructor(writeKey, options) {
     options = options || {};
 
-    assert(writeKey, "You must pass your project's write key.");
-    assert(dataPlaneURL, "You must pass your data plane url.");
+    assert(writeKey, "You must pass your RudderStack project's write key.");
 
     this.queue = [];
     this.pQueue = undefined;
     this.pQueueInitialized = false;
     this.pQueueOpts = undefined;
     this.pJobOpts = {};
-    this.state = "idle"; // this variable is not being used anymore. Previously it is used to prevent concurrency, added at the time of persistance support is added.
     this.writeKey = writeKey;
-    this.host = removeSlash(dataPlaneURL);
+    this.host = removeSlash(
+      options.dataPlaneUrl || options.host || 'https://hosted.rudderlabs.com',
+    );
+    this.path = removeSlash(options.path || '/v1/batch');
+    let axiosInstance = options.axiosInstance;
+    if (axiosInstance == null) {
+      axiosInstance = axios.create(options.axiosConfig);
+    }
+    this.axiosInstance = axiosInstance;
     this.timeout = options.timeout || false;
     this.flushAt = Math.max(options.flushAt, 1) || 20;
-    this.flushInterval = options.flushInterval || 20000;
+    this.maxQueueSize = options.maxQueueSize || 1024 * 450; // 500kb is the API limit, if we approach the limit i.e., 450kb, we'll flush
     this.maxInternalQueueSize = options.maxInternalQueueSize || 20000;
-    this.logLevel = options.logLevel || "info";
+    this.flushInterval = options.flushInterval || 10000;
     this.flushed = false;
-    Object.defineProperty(this, "enable", {
+    this.errorHandler = options.errorHandler;
+    this.pendingFlush = null;
+    this.logLevel = options.logLevel || 'info';
+    this.gzip = true;
+    if (options.gzip === false) {
+      this.gzip = false;
+    }
+    Object.defineProperty(this, 'enable', {
       configurable: false,
       writable: false,
       enumerable: true,
-      value: typeof options.enable === "boolean" ? options.enable : true,
+      value: typeof options.enable === 'boolean' ? options.enable : true,
     });
 
     this.logger = winston.createLogger({
       level: this.logLevel,
       format: winston.format.combine(
-        winston.format.label({ label: "Rudder" }),
+        winston.format.label({ label: 'Rudder' }),
         winston.format.timestamp(),
-        logFormat
+        logFormat,
       ),
       transports: [new winston.transports.Console()],
     });
 
-    axiosRetry(axios, { retries: 0 });
+    if (options.retryCount !== 0) {
+      axiosRetry(this.axiosInstance, {
+        retries: options.retryCount || 3,
+        retryDelay: axiosRetry.exponentialDelay,
+        ...options.axiosRetryConfig,
+        // retryCondition is below optional config to ensure it does not get overridden
+        retryCondition: this._isErrorRetryable,
+      });
+    }
   }
 
   addPersistentQueueProcessor() {
@@ -87,87 +119,98 @@ class Analytics {
     const payloadQueue = this.pQueue;
     const jobOpts = this.pJobOpts;
 
-    this.pQueue.on("failed", function(job, error) {
-      let jobData = eval("(" + job.data.eventData + ")");
-      this.logger.error("job : " + jobData.description + " " + error);
+    this.pQueue.on('failed', function (job, error) {
+      const jobData = eval('(' + job.data.eventData + ')');
+      this.logger.error('job : ' + jobData.description + ' ' + error);
     });
 
     // tapping on queue events
-    this.pQueue.on("completed", function(job, result) {
-      let jobData = eval("(" + job.data.eventData + ")");
-      result = result || "completed";
-      this.logger.debug("job : " + jobData.description + " " + result);
+    this.pQueue.on('completed', function (job, result) {
+      const jobData = eval('(' + job.data.eventData + ')');
+      result = result || 'completed';
+      this.logger.debug('job : ' + jobData.description + ' ' + result);
     });
 
-    this.pQueue.on("stalled", function(job) {
-      let jobData = eval("(" + job.data.eventData + ")");
-      this.logger.warn("job : " + jobData.description + " is stalled...");
+    this.pQueue.on('stalled', function (job) {
+      const jobData = eval('(' + job.data.eventData + ')');
+      this.logger.warn('job : ' + jobData.description + ' is stalled...');
     });
 
-    this.pQueue.process(function(job, done) {
+    this.pQueue.process((job, done) => {
       // job failed for maxAttempts or more times, push to failed queue
       // starting with attempt = 0
-      let maxAttempts = jobOpts.maxAttempts || 10;
-      let jobData = eval("(" + job.data.eventData + ")");
+      const maxAttempts = jobOpts.maxAttempts || 10;
+      const jobData = eval('(' + job.data.eventData + ')');
       if (jobData.attempts >= maxAttempts) {
         done(
           new Error(
-            "job : " +
+            'job : ' +
               jobData.description +
-              " pushed to failed queue after attempts " +
+              ' pushed to failed queue after attempts ' +
               jobData.attempts +
-              " skipping further retries..."
-          )
+              ' skipping further retries...',
+          ),
         );
       } else {
         // process the job after exponential delay, if it's the 0th attempt, setTimeout will fire immediately
         // max delay is 30 sec, it is mostly in sync with a bull queue job max lock time
-        setTimeout(function() {
-          let req = jobData.request;
-          req.data.sentAt = new Date();
-          // if request succeeded, mark the job done and move to completed
-          axios(req)
-            .then((response) => {
-              rdone(jobData.callbacks);
-              done();
-            })
-            .catch((err) => {
-              // check if request is retryable
-              if (_isErrorRetryable(err)) {
-                let attempts = jobData.attempts;
-                jobData.attempts = attempts + 1;
-                // increment attempt
-                // add a new job to queue in lifo
-                // if able to add, mark the earlier job done with push to completed with a msg
-                // if add to redis queue gives exception, not catching it
-                // in case of redis queue error, mark the job as failed ? i.e add the catch block in below promise ?
-                payloadQueue
-                  .add({ eventData: serialize(jobData) }, { lifo: true })
-                  .then((pushedJob) => {
-                    done(
-                      null,
-                      "job : " +
-                        jobData.description +
-                        " failed for attempt " +
-                        attempts +
-                        " " +
-                        err
-                    );
-                  })
-                  .catch((error) => {
-                    this.logger.error(
-                      "failed to requeue job " + jobData.description
-                    );
-                    rdone(jobData.callbacks, error);
-                    done(error);
-                  });
-              } else {
-                // if not retryable, mark the job failed and to failed queue for user to retry later
-                rdone(jobData.callbacks, err);
-                done(err);
-              }
-            });
-        }, Math.min(30000, Math.pow(2, jobData.attempts) * 1000));
+        setTimeout(
+          function (axiosInstance, host, path, gzipOption) {
+            const req = jobData.request;
+            req.data.sentAt = new Date();
+
+            if (gzipOption) {
+              req.data = gzip(JSON.stringify(req.data));
+              req.headers['Content-Encoding'] = 'gzip';
+            }
+            // if request succeeded, mark the job done and move to completed
+            axiosInstance
+              .post(`${host}${path}`, req.data, req)
+              .then((response) => {
+                rdone(jobData.callbacks);
+                done();
+              })
+              .catch((err) => {
+                // check if request is retryable
+                if (_isErrorRetryable(err)) {
+                  const attempts = jobData.attempts;
+                  jobData.attempts = attempts + 1;
+                  // increment attempt
+                  // add a new job to queue in lifo
+                  // if able to add, mark the earlier job done with push to completed with a msg
+                  // if add to redis queue gives exception, not catching it
+                  // in case of redis queue error, mark the job as failed ? i.e add the catch block in below promise ?
+                  payloadQueue
+                    .add({ eventData: serialize(jobData) }, { lifo: true })
+                    .then((pushedJob) => {
+                      done(
+                        null,
+                        'job : ' +
+                          jobData.description +
+                          ' failed for attempt ' +
+                          attempts +
+                          ' ' +
+                          err,
+                      );
+                    })
+                    .catch((error) => {
+                      this.logger.error('failed to requeue job ' + jobData.description);
+                      rdone(jobData.callbacks, error);
+                      done(error);
+                    });
+                } else {
+                  // if not retryable, mark the job failed and to failed queue for user to retry later
+                  rdone(jobData.callbacks, err);
+                  done(err);
+                }
+              });
+          },
+          Math.min(30000, 2 ** jobData.attempts * 1000),
+          this.axiosInstance,
+          this.host,
+          this.path,
+          this.gzip,
+        );
       }
     });
   }
@@ -206,27 +249,24 @@ class Analytics {
    */
   createPersistenceQueue(queueOpts, callback) {
     if (this.pQueueInitialized) {
-      this.logger.debug(
-        "a persistent queue is already initialized, skipping..."
-      );
+      this.logger.debug('a persistent queue is already initialized, skipping...');
       return;
     }
 
+    const Queue = require('bull');
+
     this.pQueueOpts = queueOpts || {};
-    this.pQueueOpts.isMultiProcessor =
-      this.pQueueOpts.isMultiProcessor || false;
+    this.pQueueOpts.isMultiProcessor = this.pQueueOpts.isMultiProcessor || false;
     if (!this.pQueueOpts.redisOpts) {
-      throw new Error(
-        "redis connection parameters not present. Cannot make a persistent queue"
-      );
+      throw new Error('redis connection parameters not present. Cannot make a persistent queue');
     }
     this.pJobOpts = this.pQueueOpts.jobOpts || {};
-    this.pQueue = new Queue(this.pQueueOpts.queueName || "rudderEventsQueue", {
+    this.pQueue = new Queue(this.pQueueOpts.queueName || 'rudderEventsQueue', {
       redis: this.pQueueOpts.redisOpts,
-      prefix: "{" + this.pQueueOpts.prefix + "}" || "{rudder}",
+      prefix: this.pQueueOpts.prefix ? `{${this.pQueueOpts.prefix}}` : '{rudder}',
     });
 
-    this.logger.debug("isMultiProcessor: " + this.pQueueOpts.isMultiProcessor);
+    this.logger.debug('isMultiProcessor: ' + this.pQueueOpts.isMultiProcessor);
 
     this.pQueue
       .isReady()
@@ -242,13 +282,11 @@ class Analytics {
           this.pQueue
             .getActive()
             .then((jobs) => {
-              this.logger.debug("success geting active jobs");
+              this.logger.debug('success geting active jobs');
               if (jobs.length == 0) {
-                this.logger.debug(
-                  "there are no active jobs while starting up queue"
-                );
+                this.logger.debug('there are no active jobs while starting up queue');
                 this.addPersistentQueueProcessor();
-                this.logger.debug("success adding process");
+                this.logger.debug('success adding process');
                 this.pQueueInitialized = true;
                 callback();
               } else {
@@ -256,53 +294,47 @@ class Analytics {
                 // moving active job is important as this job doesn't have a process function
                 // and will later be retried which will mess event ordering
                 if (jobs.length > 1) {
-                  this.logger.debug(
-                    "number of active jobs at starting up queue > 1 "
-                  );
+                  this.logger.debug('number of active jobs at starting up queue > 1 ');
                   callback(
                     new Error(
-                      "queue has more than 1 active job, move them to failed and try again"
-                    )
+                      'queue has more than 1 active job, move them to failed and try again',
+                    ),
                   );
                   return;
                 }
-                this.logger.debug(
-                  "number of active jobs at starting up queue = " + jobs.length
-                );
+                this.logger.debug('number of active jobs at starting up queue = ' + jobs.length);
                 jobs.forEach((job) => {
                   job
                     .remove()
                     .then(() => {
-                      this.logger.debug("success removed active job");
-                      let jobData = eval("(" + job.data.eventData + ")");
+                      this.logger.debug('success removed active job');
+                      const jobData = eval('(' + job.data.eventData + ')');
                       jobData.attempts = 0;
                       this.pQueue
                         .add({ eventData: serialize(jobData) }, { lifo: true })
                         .then((removedJob) => {
-                          this.logger.debug(
-                            "success adding removed job back to queue"
-                          );
+                          this.logger.debug('success adding removed job back to queue');
                           this.addPersistentQueueProcessor();
-                          this.logger.debug("success adding process");
+                          this.logger.debug('success adding process');
                           this.pQueueInitialized = true;
                           callback();
                         });
                     })
                     .catch((error) => {
-                      this.logger.error("failed to remove active job");
+                      this.logger.error('failed to remove active job');
                       callback(error);
                     });
                 });
               }
             })
             .catch((error) => {
-              this.logger.error("failed geting active jobs");
+              this.logger.error('failed geting active jobs');
               callback(error);
             });
         }
       })
       .catch((error) => {
-        this.logger.error("queue not ready");
+        this.logger.error('queue not ready');
         callback(error);
       });
   }
@@ -311,10 +343,10 @@ class Analytics {
     try {
       looselyValidate(message, type);
     } catch (e) {
-      if (e.message === "Your message must be < 32kb.") {
+      if (e.message === 'Your message must be < 32kb.') {
         this.logger.info(
-          "Your message must be < 32kb. This is currently surfaced as a warning. Please update your code",
-          message
+          'Your message must be < 32kb. This is currently surfaced as a warning. Please update your code',
+          message,
         );
         return;
       }
@@ -337,8 +369,8 @@ class Analytics {
    */
 
   identify(message, callback) {
-    this._validate(message, "identify");
-    this.enqueue("identify", message, callback);
+    this._validate(message, 'identify');
+    this.enqueue('identify', message, callback);
     return this;
   }
 
@@ -358,8 +390,8 @@ class Analytics {
    */
 
   group(message, callback) {
-    this._validate(message, "group");
-    this.enqueue("group", message, callback);
+    this._validate(message, 'group');
+    this.enqueue('group', message, callback);
     return this;
   }
 
@@ -379,8 +411,8 @@ class Analytics {
    */
 
   track(message, callback) {
-    this._validate(message, "track");
-    this.enqueue("track", message, callback);
+    this._validate(message, 'track');
+    this.enqueue('track', message, callback);
     return this;
   }
 
@@ -400,8 +432,8 @@ class Analytics {
    */
 
   page(message, callback) {
-    this._validate(message, "page");
-    this.enqueue("page", message, callback);
+    this._validate(message, 'page');
+    this.enqueue('page', message, callback);
     return this;
   }
 
@@ -409,13 +441,13 @@ class Analytics {
    * Send a screen `message`.
    *
    * @param {Object} message
-   * @param {Function} fn (optional)
+   * @param {Function} [callback] (optional)
    * @return {Analytics}
    */
 
   screen(message, callback) {
-    this._validate(message, "screen");
-    this.enqueue("screen", message, callback);
+    this._validate(message, 'screen');
+    this.enqueue('screen', message, callback);
     return this;
   }
 
@@ -435,8 +467,8 @@ class Analytics {
    */
 
   alias(message, callback) {
-    this._validate(message, "alias");
-    this.enqueue("alias", message, callback);
+    this._validate(message, 'alias');
+    this.enqueue('alias', message, callback);
     return this;
   }
 
@@ -453,10 +485,10 @@ class Analytics {
   enqueue(type, message, callback) {
     if (this.queue.length >= this.maxInternalQueueSize) {
       this.logger.error(
-        "not adding events for processing as queue size " +
+        'not adding events for processing as queue size ' +
           this.queue.length +
-          " >= than max configuration " +
-          this.maxInternalQueueSize
+          ' >= than max configuration ' +
+          this.maxInternalQueueSize,
       );
       return;
     }
@@ -469,7 +501,7 @@ class Analytics {
       return setImmediate(callback);
     }
 
-    if (type == "identify") {
+    if (type == 'identify') {
       if (lMessage.traits) {
         if (!lMessage.context) {
           lMessage.context = {};
@@ -483,13 +515,13 @@ class Analytics {
 
     lMessage.context = {
       library: {
-        name: "analytics-node",
+        name: 'analytics-node',
         version,
       },
       ...lMessage.context,
     };
 
-    lMessage.channel = "server";
+    lMessage.channel = 'server';
 
     lMessage._metadata = {
       nodeVersion: process.versions.node,
@@ -501,11 +533,8 @@ class Analytics {
     }
 
     if (!lMessage.messageId) {
-      // We md5 the messaage to add more randomness. This is primarily meant
-      // for use in the browser where the uuid package falls back to Math.random()
-      // which is not a great source of randomness.
-      // Borrowed from analytics.js (https://github.com/segment-integrations/analytics.js-integration-segmentio/blob/a20d2a2d222aeb3ab2a8c7e72280f1df2618440e/lib/index.js#L255-L256).
-      lMessage.messageId = `node-${md5(JSON.stringify(lMessage))}-${uuidv4()}`;
+      // Previously `node-${md5(JSON.stringify(lMessage))}-${uuid()}` this was being used
+      lMessage.messageId = uuid();
     }
 
     // Historically this library has accepted strings and numbers as IDs.
@@ -526,13 +555,17 @@ class Analytics {
       return;
     }
 
-    if (this.queue.length >= this.flushAt) {
-      this.logger.debug("flushAt reached, trying flush...");
+    const hasReachedFlushAt = this.queue.length >= this.flushAt;
+    const hasReachedQueueSize =
+      this.queue.reduce((acc, item) => acc + JSON.stringify(item).length, 0) >= this.maxQueueSize;
+    if (hasReachedFlushAt || hasReachedQueueSize) {
+      this.logger.debug('flushAt reached, trying flush...');
       this.flush();
+      return;
     }
 
     if (this.flushInterval && !this.flushTimer) {
-      this.logger.debug("no existing flush timer, creating new one");
+      this.logger.debug('no existing flush timer, creating new one');
       this.flushTimer = setTimeout(this.flush.bind(this), this.flushInterval);
     }
   }
@@ -544,138 +577,161 @@ class Analytics {
    * @return {Analytics}
    */
 
-  flush(callback) {
+  async flush(callback) {
     // check if earlier flush was pushed to queue
-    this.logger.debug("in flush");
-    this.state = "running";
+    this.logger.debug('in flush');
+    this.state = 'running';
     callback = callback || noop;
 
     if (!this.enable) {
-      this.state = "idle";
-      return setImmediate(callback);
+      setImmediate(callback);
+      return Promise.resolve();
     }
 
     if (this.timer) {
-      this.logger.debug("cancelling existing timer...");
+      this.logger.debug('cancelling existing timer...');
       clearTimeout(this.timer);
       this.timer = null;
     }
 
     if (this.flushTimer) {
-      this.logger.debug("cancelling existing flushTimer...");
+      this.logger.debug('cancelling existing flushTimer...');
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
 
     if (!this.queue.length) {
-      this.logger.debug("queue is empty, nothing to flush");
-      this.state = "idle";
-      return setImmediate(callback);
+      this.logger.debug('queue is empty, nothing to flush');
+      setImmediate(callback);
+      return Promise.resolve();
+    }
+
+    try {
+      if (this.pendingFlush) {
+        await this.pendingFlush;
+      }
+    } catch (err) {
+      this.pendingFlush = null;
+      throw err;
     }
 
     const items = this.queue.splice(0, this.flushAt);
     const callbacks = items.map((item) => item.callback);
     const messages = items.map((item) => {
       // if someone mangles directly with queue
-      if (typeof item.message == "object") {
+      if (typeof item.message == 'object') {
         item.message.sentAt = new Date();
       }
       return item.message;
     });
 
-    const data = {
+    let data = {
       batch: messages,
+      timestamp: new Date(),
       sentAt: new Date(),
     };
-    this.logger.debug("batch size is " + items.length);
-    this.logger.silly("===data===", data);
 
     const done = (err) => {
-      callbacks.forEach((callback_) => {
-        callback_(err);
+      setImmediate(() => {
+        callbacks.forEach((eventCallback) => eventCallback(err, data));
+        callback(err, data);
       });
-      callback(err, data);
     };
 
-    // Don't set the user agent if we're not on a browser. The latest spec allows
+    // Don't set the user agent if we're on a browser. The latest spec allows
     // the User-Agent header (see https://fetch.spec.whatwg.org/#terminology-headers
     // and https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest/setRequestHeader),
     // but browsers such as Chrome and Safari have not caught up.
     const headers = {};
-    if (typeof window === "undefined") {
-      headers["user-agent"] = `analytics-node/${version}`;
+    if (typeof window === 'undefined') {
+      headers['user-agent'] = `analytics-node/${version}`;
+    }
+
+    // If gzip feature is enabled compress the request payload
+    // Note: the server version should be 1.4 and above
+    if (this.gzip && !this.pQueue) {
+      data = gzip(JSON.stringify(data));
+      headers['Content-Encoding'] = 'gzip';
     }
 
     const req = {
-      method: "POST",
-      url: `${this.host}`,
       auth: {
         username: this.writeKey,
       },
-      data,
       headers,
     };
 
     if (this.timeout) {
-      req.timeout =
-        typeof this.timeout === "string" ? ms(this.timeout) : this.timeout;
+      req.timeout = typeof this.timeout === 'string' ? ms(this.timeout) : this.timeout;
     }
 
     if (this.pQueue && this.pQueueInitialized) {
-      let eventData = {
-        description: `node-${md5(JSON.stringify(req))}-${uuidv4()}`,
-        request: req,
-        callbacks: callbacks,
+      const request = {
+        ...req,
+        data,
+      };
+      const eventData = {
+        description: `node-${md5(JSON.stringify(request))}-${uuid()}`,
+        request,
+        callbacks,
         attempts: 0,
       };
       // using serialize library as default JSON.stringify mangles with function/callback serialization
       this.pQueue
         .add({ eventData: serialize(eventData) })
         .then((pushedJob) => {
-          this.logger.debug("pushed job to queue");
+          this.logger.debug('pushed job to queue');
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
-          this.state = "idle";
+          this.state = 'idle';
         })
         .catch((error) => {
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.queue.unshift(items);
-          this.state = "idle";
+          this.state = 'idle';
           this.logger.error(
-            "failed to push to redis queue, in-memory queue size: " +
-              this.queue.length
+            'failed to push to redis queue, in-memory queue size: ' + this.queue.length,
           );
           throw error;
         });
     } else if (!this.pQueue) {
-      axios({
-        ...req,
-        "axios-retry": {
-          retries: 3,
-          retryCondition: this._isErrorRetryable.bind(this),
-          retryDelay: axiosRetry.exponentialDelay,
-        },
-      })
-        .then((response) => {
-          this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
-          this.state = "idle";
+      this.pendingFlush = this.axiosInstance
+        .post(`${this.host}${this.path}`, data, req)
+        .then(() => {
           done();
+          return Promise.resolve(data);
         })
         .catch((err) => {
-          this.logger.error(
-            "got error while attempting send for 3 times, dropping " +
-              items.length +
-              " events"
-          );
-          this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
-          this.state = "idle";
+          const isDuringTestExecution =
+            err &&
+            err.response &&
+            err.response.status === 404 &&
+            process.env.AVA_MODE_ON &&
+            this.path === '/v1/batch' &&
+            !this.timeout;
+
+          if (typeof this.errorHandler === 'function') {
+            done(isDuringTestExecution ? undefined : err);
+            return this.errorHandler(err);
+          }
+
+          // Retry invalid write key while during unit test run. Server responds with 404 status for invalid key
+          if (isDuringTestExecution) {
+            done();
+            return;
+          }
+
           if (err.response) {
             const error = new Error(err.response.statusText);
-            return done(error);
+            done(error);
+            throw error;
           }
+
           done(err);
+          throw err;
         });
+      return this.pendingFlush;
     } else {
-      throw new Error("persistent queue not ready");
+      throw new Error('persistent queue not ready');
     }
   }
 
@@ -690,7 +746,7 @@ class Analytics {
       return false;
     }
 
-    this.logger.error("error status: " + error.response.status);
+    // this.logger.error("error status: " + error.response.status);
     // Retry Server Errors (5xx).
     if (error.response.status >= 500 && error.response.status <= 599) {
       return true;

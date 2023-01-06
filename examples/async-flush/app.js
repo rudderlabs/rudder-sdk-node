@@ -1,9 +1,10 @@
-const Rudderanalytics = require("@rudderstack/rudder-sdk-node"); // use latest package
+const Rudderanalytics = require('@rudderstack/rudder-sdk-node'); // For v1.x.x
+require('dotenv').config({ path: '../../.env' });
 
-const writeKey = "WRITE_KEY"; // replace with your write-key
-const dataPlaneURL = "DATA_PLANE_URL"; // replace with your data plane url
+const writeKey = process.env.WRITE_KEY;
+const dataPlaneUrl = process.env.DATAPLANE_URL;
 
-const client = new Rudderanalytics(writeKey, `${dataPlaneURL}/v1/batch`, {
+const client = new Rudderanalytics(writeKey, `${dataPlaneUrl}/v1/batch`, {
   // flushAt: 2,
 });
 /**
@@ -17,45 +18,45 @@ async function test() {
   // no promisify or await needed and called concurrently
   client.identify(
     {
-      userId: "Test user 1",
+      userId: 'Test user 1',
       traits: {
-        name: "Name Username",
-        email: "name@website.com",
-        plan: "Free",
+        name: 'Name Username',
+        email: 'name@website.com',
+        plan: 'Free',
         friends: 21,
       },
     },
     () => {
-      console.log("In identify call");
-    }
+      console.log('In identify call');
+    },
   );
 
   client.track(
     {
-      userId: "Test user 1",
-      event: "Item Purchased",
+      userId: 'Test user 1',
+      event: 'Item Purchased',
       properties: {
         revenue: 19.95,
-        shippingMethod: "Premium",
+        shippingMethod: 'Premium',
       },
     },
     () => {
-      console.log("In track call");
-    }
+      console.log('In track call');
+    },
   );
   client.track(
     {
-      userId: "Test user 2",
-      event: "Item Viewed",
+      userId: 'Test user 2',
+      event: 'Item Viewed',
       properties: {
         price: 45,
-        currency: "USD",
-        productId: "Product-12345",
+        currency: 'USD',
+        productId: 'Product-12345',
       },
     },
     () => {
-      console.log("In track call 2");
-    }
+      console.log('In track call 2');
+    },
   );
 
   // this both flushes and ensures completion
@@ -63,7 +64,7 @@ async function test() {
 }
 
 test().then(() => {
-  console.log("test call done");
+  console.log('test call done');
 });
 
 exports.Rudderanalytics = Rudderanalytics;
