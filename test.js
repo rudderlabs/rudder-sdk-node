@@ -766,3 +766,26 @@ test('ensure other axios clients are not impacted by axios-retry', async (t) => 
 
   server.close();
 });
+
+test('ensure library information not overridden if provided in context object', (t) => {
+  const client = createClient();
+  const customContext = {
+    library: {
+      name: 'random-sdk',
+      version: '1234',
+    },
+  };
+
+  client.enqueue(
+    'type',
+    {
+      event: 'test',
+      context: customContext,
+    },
+    noop,
+  );
+
+  const actualContext = client.queue[0].message.context;
+
+  t.deepEqual(actualContext, context);
+});
