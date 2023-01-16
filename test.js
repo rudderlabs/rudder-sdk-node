@@ -787,5 +787,41 @@ test('ensure library information not overridden if provided in context object', 
 
   const actualContext = client.queue[0].message.context;
 
-  t.deepEqual(actualContext, context);
+  t.deepEqual(actualContext.library, context.library);
+});
+
+test('ensure library information not overridden if provided null in context object', (t) => {
+  const client = createClient();
+  const customContext = null;
+
+  client.enqueue(
+    'type',
+    {
+      event: 'test',
+      context: customContext,
+    },
+    noop,
+  );
+
+  const actualContext = client.queue[0].message.context;
+
+  t.deepEqual(actualContext.library, context.library);
+});
+
+test('ensure library information not overridden if provided undefined in context object', (t) => {
+  const client = createClient();
+  const customContext = undefined;
+
+  client.enqueue(
+    'type',
+    {
+      event: 'test',
+      context: customContext,
+    },
+    noop,
+  );
+
+  const actualContext = client.queue[0].message.context;
+
+  t.deepEqual(actualContext.library, context.library);
 });
