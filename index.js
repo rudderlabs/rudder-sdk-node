@@ -514,11 +514,11 @@ class Analytics {
     lMessage.type = type;
 
     lMessage.context = {
+      ...lMessage.context,
       library: {
         name: 'analytics-node',
         version,
       },
-      ...lMessage.context,
     };
 
     lMessage.channel = 'server';
