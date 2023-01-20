@@ -601,6 +601,17 @@ class Analytics {
     }
 
     if (!this.queue.length) {
+      if (this.pendingFlush) {
+        this.logger.debug('queue is empty, but a flush already exists');
+        // We attach the callback to the end of the chain to support a caller calling `flush()` multiple times when the queue is empty.
+        this.pendingFlush = this.pendingFlush
+          .then(() => {
+            callback();
+            return Promise.resolve();
+          });
+        return this.pendingFlush;
+      }
+
       this.logger.debug('queue is empty, nothing to flush');
       setImmediate(callback);
       return Promise.resolve();
