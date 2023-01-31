@@ -133,9 +133,14 @@ class Analytics {
             })
             .catch((err) => {
               // check if request is retryable
-              if (_isErrorRetryable(err)) {
+              const isRetryable = _isErrorRetryable(err);
+              this.logger.debug(
+                `Request is ${isRetryable ? "" : "not"} to be retried`
+              );
+              if (isRetryable) {
                 let attempts = jobData.attempts;
                 jobData.attempts = attempts + 1;
+                this.logger.debug(`Request retry attempt ${attempts}`);
                 // increment attempt
                 // add a new job to queue in lifo
                 // if able to add, mark the earlier job done with push to completed with a msg
@@ -662,9 +667,10 @@ class Analytics {
         })
         .catch((err) => {
           this.logger.error(
-            "got error while attempting send for 3 times, dropping " +
-              items.length +
-              " events"
+            `got error while attempting send for 3 times, dropping ${
+              items.length
+            } events.\n Error: 
+            ${err.response ? err.response.statusText : err.code}`
           );
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = "idle";
@@ -680,6 +686,14 @@ class Analytics {
   }
 
   _isErrorRetryable(error) {
+    if(error.response) {
+      this.logger.error(
+        "Response error status: " + error.response.status + "\nResponse error code: " + error.code
+      );
+    } else {
+      this.logger.error("Response error code: " + error.code);
+    }
+
     // Retry Network Errors.
     if (axiosRetry.isNetworkError(error)) {
       return true;
@@ -689,8 +703,6 @@ class Analytics {
       // Cannot determine if the request can be retried
       return false;
     }
-
-    this.logger.error("error status: " + error.response.status);
     // Retry Server Errors (5xx).
     if (error.response.status >= 500 && error.response.status <= 599) {
       return true;
