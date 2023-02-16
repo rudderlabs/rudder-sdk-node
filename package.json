@@ -1,6 +1,6 @@
 {
   "name": "@rudderstack/rudder-sdk-node",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Rudder Node SDK",
   "license": "",
   "repository": "rudderlabs/rudder-sdk-node",
@@ -114,7 +114,8 @@
     "dot-prop": "5.3.0",
     "semver": "7.3.8",
     "semver-regex": "3.1.4",
-    "json5": "2.2.2"
+    "json5": "2.2.2",
+    "http-cache-semantics": "4.1.1"
   },
   "resolutions": {
     "kind-of": "^6.0.3",
@@ -128,7 +129,8 @@
     "dot-prop": "5.3.0",
     "semver": "7.3.8",
     "semver-regex": "3.1.4",
-    "json5": "2.2.2"
+    "json5": "2.2.2",
+    "http-cache-semantics": "4.1.1"
   },
   "optionalDependencies": {
     "bull": "^4.10.2"

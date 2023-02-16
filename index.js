@@ -103,7 +103,7 @@ class Analytics {
         retryDelay: axiosRetry.exponentialDelay,
         ...options.axiosRetryConfig,
         // retryCondition is below optional config to ensure it does not get overridden
-        retryCondition: this._isErrorRetryable,
+        retryCondition: this._isErrorRetryable.bind(this),
       });
     }
   }
@@ -172,9 +172,14 @@ class Analytics {
               })
               .catch((err) => {
                 // check if request is retryable
-                if (_isErrorRetryable(err)) {
+                const isRetryable = _isErrorRetryable(err);
+                this.logger.debug(
+                  `Request is ${isRetryable ? "" : "not"} to be retried`
+                );
+                if (isRetryable) {
                   const attempts = jobData.attempts;
                   jobData.attempts = attempts + 1;
+                  this.logger.debug(`Request retry attempt ${attempts}`);
                   // increment attempt
                   // add a new job to queue in lifo
                   // if able to add, mark the earlier job done with push to completed with a msg
@@ -601,6 +606,17 @@ class Analytics {
     }
 
     if (!this.queue.length) {
+      if (this.pendingFlush) {
+        this.logger.debug('queue is empty, but a flush already exists');
+        // We attach the callback to the end of the chain to support a caller calling `flush()` multiple times when the queue is empty.
+        this.pendingFlush = this.pendingFlush
+          .then(() => {
+            callback();
+            return Promise.resolve();
+          });
+        return this.pendingFlush;
+      }
+
       this.logger.debug('queue is empty, nothing to flush');
       setImmediate(callback);
       return Promise.resolve();
@@ -701,6 +717,9 @@ class Analytics {
           return Promise.resolve(data);
         })
         .catch((err) => {
+          this.logger.error(
+            `Error: ${err.response ? err.response.statusText : err.code}`
+          );
           const isDuringTestExecution =
             err &&
             err.response &&
@@ -736,6 +755,14 @@ class Analytics {
   }
 
   _isErrorRetryable(error) {
+    if(error.response) {
+      this.logger.error(
+        "Response error status: " + error.response.status + "\nResponse error code: " + error.code
+      );
+    } else {
+      this.logger.error("Response error code: " + error.code);
+    }
+
     // Retry Network Errors.
     if (axiosRetry.isNetworkError(error)) {
       return true;
@@ -746,7 +773,6 @@ class Analytics {
       return false;
     }
 
-    // this.logger.error("error status: " + error.response.status);
     // Retry Server Errors (5xx).
     if (error.response.status >= 500 && error.response.status <= 599) {
       return true;
