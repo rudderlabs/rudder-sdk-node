@@ -47,7 +47,7 @@ export interface constructorOptions {
   axiosInstance?: any;
   axiosRetryConfig?: any;
   retryCount?: number;
-  errorHandler?: () => void;
+  errorHandler?: (err?: any) => void;
   gzip?: boolean;
 }
 
