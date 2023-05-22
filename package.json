@@ -115,7 +115,8 @@
     "semver": "7.3.8",
     "semver-regex": "3.1.4",
     "json5": "2.2.2",
-    "http-cache-semantics": "4.1.1"
+    "http-cache-semantics": "4.1.1",
+    "yaml": "2.2.2"
   },
   "resolutions": {
     "kind-of": "^6.0.3",
@@ -130,7 +131,8 @@
     "semver": "7.3.8",
     "semver-regex": "3.1.4",
     "json5": "2.2.2",
-    "http-cache-semantics": "4.1.1"
+    "http-cache-semantics": "4.1.1",
+    "yaml": "2.2.2"
   },
   "optionalDependencies": {
     "bull": "^4.10.2"
