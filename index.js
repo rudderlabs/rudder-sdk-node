@@ -287,7 +287,7 @@ class Analytics {
           this.pQueue
             .getActive()
             .then((jobs) => {
-              this.logger.debug('success geting active jobs');
+              this.logger.debug('success getting active jobs');
               if (jobs.length == 0) {
                 this.logger.debug('there are no active jobs while starting up queue');
                 this.addPersistentQueueProcessor();
@@ -333,7 +333,7 @@ class Analytics {
               }
             })
             .catch((error) => {
-              this.logger.error('failed geting active jobs');
+              this.logger.error('failed getting active jobs');
               callback(error);
             });
         }
