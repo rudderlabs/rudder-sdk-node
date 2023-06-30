@@ -1,3 +1,4 @@
+/* eslint-disable no-underscore-dangle */
 /* eslint-disable no-eval */
 
 const assert = require('assert');
@@ -173,9 +174,7 @@ class Analytics {
               .catch((err) => {
                 // check if request is retryable
                 const isRetryable = _isErrorRetryable(err);
-                this.logger.debug(
-                  `Request is ${isRetryable ? "" : "not"} to be retried`
-                );
+                this.logger.debug(`Request is ${isRetryable ? '' : 'not'} to be retried`);
                 if (isRetryable) {
                   const attempts = jobData.attempts;
                   jobData.attempts = attempts + 1;
@@ -609,11 +608,10 @@ class Analytics {
       if (this.pendingFlush) {
         this.logger.debug('queue is empty, but a flush already exists');
         // We attach the callback to the end of the chain to support a caller calling `flush()` multiple times when the queue is empty.
-        this.pendingFlush = this.pendingFlush
-          .then(() => {
-            callback();
-            return Promise.resolve();
-          });
+        this.pendingFlush = this.pendingFlush.then(() => {
+          callback();
+          return Promise.resolve();
+        });
         return this.pendingFlush;
       }
 
@@ -717,13 +715,9 @@ class Analytics {
           return Promise.resolve(data);
         })
         .catch((err) => {
-          this.logger.error(
-            `Error: ${err.response ? err.response.statusText : err.code}`
-          );
+          this.logger.error(`Error: ${err.response ? err.response.statusText : err.code}`);
           const isDuringTestExecution =
-            err &&
-            err.response &&
-            err.response.status === 404 &&
+            err?.response?.status === 404 &&
             process.env.AVA_MODE_ON &&
             this.path === '/v1/batch' &&
             !this.timeout;
@@ -755,12 +749,12 @@ class Analytics {
   }
 
   _isErrorRetryable(error) {
-    if(error.response) {
+    if (error.response) {
       this.logger.error(
-        "Response error status: " + error.response.status + "\nResponse error code: " + error.code
+        'Response error status: ' + error.response.status + '\nResponse error code: ' + error.code,
       );
     } else {
-      this.logger.error("Response error code: " + error.code);
+      this.logger.error('Response error code: ' + error.code);
     }
 
     // Retry Network Errors.
