@@ -1,3 +1,5 @@
+/* eslint-disable no-param-reassign */
+/* eslint-disable no-underscore-dangle */
 /* eslint-disable no-eval */
 
 const assert = require('assert');
@@ -48,7 +50,24 @@ class Analytics {
    */
 
   constructor(writeKey, options) {
-    options = options || {};
+    const loadOptions = options || {};
+    const {
+      dataPlaneUrl,
+      host,
+      path,
+      axiosConfig,
+      axiosRetryConfig,
+      timeout,
+      flushAt,
+      flushInterval,
+      maxQueueSize,
+      maxInternalQueueSize,
+      errorHandler,
+      logLevel,
+      enable,
+      retryCount,
+    } = loadOptions;
+    let { axiosInstance } = loadOptions;
 
     assert(writeKey, "You must pass your RudderStack project's write key.");
 
@@ -58,33 +77,30 @@ class Analytics {
     this.pQueueOpts = undefined;
     this.pJobOpts = {};
     this.writeKey = writeKey;
-    this.host = removeSlash(
-      options.dataPlaneUrl || options.host || 'https://hosted.rudderlabs.com',
-    );
-    this.path = removeSlash(options.path || '/v1/batch');
-    let axiosInstance = options.axiosInstance;
+    this.host = removeSlash(dataPlaneUrl || host || 'https://hosted.rudderlabs.com');
+    this.path = removeSlash(path || '/v1/batch');
     if (axiosInstance == null) {
-      axiosInstance = axios.create(options.axiosConfig);
+      axiosInstance = axios.create(axiosConfig);
     }
     this.axiosInstance = axiosInstance;
-    this.timeout = options.timeout || false;
-    this.flushAt = Math.max(options.flushAt, 1) || 20;
-    this.maxQueueSize = options.maxQueueSize || 1024 * 450; // 500kb is the API limit, if we approach the limit i.e., 450kb, we'll flush
-    this.maxInternalQueueSize = options.maxInternalQueueSize || 20000;
-    this.flushInterval = options.flushInterval || 10000;
+    this.timeout = timeout || false;
+    this.flushAt = Math.max(flushAt, 1) || 20;
+    this.maxQueueSize = maxQueueSize || 1024 * 450; // 500kb is the API limit, if we approach the limit i.e., 450kb, we'll flush
+    this.maxInternalQueueSize = maxInternalQueueSize || 20000;
+    this.flushInterval = flushInterval || 10000;
     this.flushed = false;
-    this.errorHandler = options.errorHandler;
+    this.errorHandler = errorHandler;
     this.pendingFlush = null;
-    this.logLevel = options.logLevel || 'info';
+    this.logLevel = logLevel || 'info';
     this.gzip = true;
-    if (options.gzip === false) {
+    if (loadOptions.gzip === false) {
       this.gzip = false;
     }
     Object.defineProperty(this, 'enable', {
       configurable: false,
       writable: false,
       enumerable: true,
-      value: typeof options.enable === 'boolean' ? options.enable : true,
+      value: typeof enable === 'boolean' ? enable : true,
     });
 
     this.logger = winston.createLogger({
@@ -97,11 +113,11 @@ class Analytics {
       transports: [new winston.transports.Console()],
     });
 
-    if (options.retryCount !== 0) {
+    if (retryCount !== 0) {
       axiosRetry(this.axiosInstance, {
-        retries: options.retryCount || 3,
+        retries: retryCount || 3,
         retryDelay: axiosRetry.exponentialDelay,
-        ...options.axiosRetryConfig,
+        ...axiosRetryConfig,
         // retryCondition is below optional config to ensure it does not get overridden
         retryCondition: this._isErrorRetryable.bind(this),
       });
@@ -121,19 +137,19 @@ class Analytics {
 
     this.pQueue.on('failed', function (job, error) {
       const jobData = eval('(' + job.data.eventData + ')');
-      this.logger.error('job : ' + jobData.description + ' ' + error);
+      this.logger.error(`job : ${jobData.description} ${error}`);
     });
 
     // tapping on queue events
     this.pQueue.on('completed', function (job, result) {
       const jobData = eval('(' + job.data.eventData + ')');
       result = result || 'completed';
-      this.logger.debug('job : ' + jobData.description + ' ' + result);
+      this.logger.debug(`job : ${jobData.description} ${result}`);
     });
 
     this.pQueue.on('stalled', function (job) {
       const jobData = eval('(' + job.data.eventData + ')');
-      this.logger.warn('job : ' + jobData.description + ' is stalled...');
+      this.logger.warn(`job : ${jobData.description} is stalled...`);
     });
 
     this.pQueue.process((job, done) => {
@@ -144,11 +160,7 @@ class Analytics {
       if (jobData.attempts >= maxAttempts) {
         done(
           new Error(
-            'job : ' +
-              jobData.description +
-              ' pushed to failed queue after attempts ' +
-              jobData.attempts +
-              ' skipping further retries...',
+            `job : ${jobData.description} pushed to failed queue after attempts ${jobData.attempts} skipping further retries...`,
           ),
         );
       } else {
@@ -173,11 +185,9 @@ class Analytics {
               .catch((err) => {
                 // check if request is retryable
                 const isRetryable = _isErrorRetryable(err);
-                this.logger.debug(
-                  `Request is ${isRetryable ? "" : "not"} to be retried`
-                );
+                this.logger.debug(`Request is ${isRetryable ? '' : 'not'} to be retried`);
                 if (isRetryable) {
-                  const attempts = jobData.attempts;
+                  const { attempts } = jobData;
                   jobData.attempts = attempts + 1;
                   this.logger.debug(`Request retry attempt ${attempts}`);
                   // increment attempt
@@ -190,16 +200,11 @@ class Analytics {
                     .then((pushedJob) => {
                       done(
                         null,
-                        'job : ' +
-                          jobData.description +
-                          ' failed for attempt ' +
-                          attempts +
-                          ' ' +
-                          err,
+                        `job : ${jobData.description} failed for attempt ${attempts} ${err}`,
                       );
                     })
                     .catch((error) => {
-                      this.logger.error('failed to requeue job ' + jobData.description);
+                      this.logger.error(`failed to requeue job ${jobData.description}`);
                       rdone(jobData.callbacks, error);
                       done(error);
                     });
@@ -271,7 +276,7 @@ class Analytics {
       prefix: this.pQueueOpts.prefix ? `{${this.pQueueOpts.prefix}}` : '{rudder}',
     });
 
-    this.logger.debug('isMultiProcessor: ' + this.pQueueOpts.isMultiProcessor);
+    this.logger.debug(`isMultiProcessor: ${this.pQueueOpts.isMultiProcessor}`);
 
     this.pQueue
       .isReady()
@@ -287,8 +292,8 @@ class Analytics {
           this.pQueue
             .getActive()
             .then((jobs) => {
-              this.logger.debug('success geting active jobs');
-              if (jobs.length == 0) {
+              this.logger.debug('success getting active jobs');
+              if (jobs.length === 0) {
                 this.logger.debug('there are no active jobs while starting up queue');
                 this.addPersistentQueueProcessor();
                 this.logger.debug('success adding process');
@@ -307,7 +312,7 @@ class Analytics {
                   );
                   return;
                 }
-                this.logger.debug('number of active jobs at starting up queue = ' + jobs.length);
+                this.logger.debug(`number of active jobs at starting up queue = ${jobs.length}`);
                 jobs.forEach((job) => {
                   job
                     .remove()
@@ -333,7 +338,7 @@ class Analytics {
               }
             })
             .catch((error) => {
-              this.logger.error('failed geting active jobs');
+              this.logger.error('failed getting active jobs');
               callback(error);
             });
         }
@@ -490,10 +495,7 @@ class Analytics {
   enqueue(type, message, callback) {
     if (this.queue.length >= this.maxInternalQueueSize) {
       this.logger.error(
-        'not adding events for processing as queue size ' +
-          this.queue.length +
-          ' >= than max configuration ' +
-          this.maxInternalQueueSize,
+        `not adding events for processing as queue size ${this.queue.length} >= than max configuration ${this.maxInternalQueueSize}`,
       );
       return;
     }
@@ -506,13 +508,11 @@ class Analytics {
       return setImmediate(callback);
     }
 
-    if (type == 'identify') {
-      if (lMessage.traits) {
-        if (!lMessage.context) {
-          lMessage.context = {};
-        }
-        lMessage.context.traits = lMessage.traits;
+    if (type === 'identify' && lMessage.traits) {
+      if (!lMessage.context) {
+        lMessage.context = {};
       }
+      lMessage.context.traits = lMessage.traits;
     }
 
     lMessage = { ...lMessage };
@@ -605,15 +605,14 @@ class Analytics {
       this.flushTimer = null;
     }
 
-    if (!this.queue.length) {
+    if (this.queue.length === 0) {
       if (this.pendingFlush) {
         this.logger.debug('queue is empty, but a flush already exists');
         // We attach the callback to the end of the chain to support a caller calling `flush()` multiple times when the queue is empty.
-        this.pendingFlush = this.pendingFlush
-          .then(() => {
-            callback();
-            return Promise.resolve();
-          });
+        this.pendingFlush = this.pendingFlush.then(() => {
+          callback();
+          return Promise.resolve();
+        });
         return this.pendingFlush;
       }
 
@@ -635,7 +634,7 @@ class Analytics {
     const callbacks = items.map((item) => item.callback);
     const messages = items.map((item) => {
       // if someone mangles directly with queue
-      if (typeof item.message == 'object') {
+      if (typeof item.message === 'object') {
         item.message.sentAt = new Date();
       }
       return item.message;
@@ -705,7 +704,7 @@ class Analytics {
           this.queue.unshift(items);
           this.state = 'idle';
           this.logger.error(
-            'failed to push to redis queue, in-memory queue size: ' + this.queue.length,
+            `failed to push to redis queue, in-memory queue size: ${this.queue.length}`,
           );
           throw error;
         });
@@ -717,9 +716,7 @@ class Analytics {
           return Promise.resolve(data);
         })
         .catch((err) => {
-          this.logger.error(
-            `Error: ${err.response ? err.response.statusText : err.code}`
-          );
+          this.logger.error(`Error: ${err.response ? err.response.statusText : err.code}`);
           const isDuringTestExecution =
             err &&
             err.response &&
@@ -755,12 +752,12 @@ class Analytics {
   }
 
   _isErrorRetryable(error) {
-    if(error.response) {
+    if (error.response) {
       this.logger.error(
-        "Response error status: " + error.response.status + "\nResponse error code: " + error.code
+        `Response error status: ${error.response.status}\nResponse error code: ${error.code}`,
       );
     } else {
-      this.logger.error("Response error code: " + error.code);
+      this.logger.error(`Response error code: ${error.code}`);
     }
 
     // Retry Network Errors.
@@ -779,11 +776,7 @@ class Analytics {
     }
 
     // Retry if rate limited.
-    if (error.response.status === 429) {
-      return true;
-    }
-
-    return false;
+    return error.response.status === 429;
   }
 }
 
