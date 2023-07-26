@@ -5,8 +5,8 @@ import delay from 'delay';
 import auth from 'basic-auth';
 import pify from 'pify';
 import test from 'ava';
-import Analytics from './index';
-import { version } from './package.json';
+import Analytics from '../src/index';
+import { version } from '../package.json';
 
 const noop = () => {};
 
