@@ -611,10 +611,6 @@ class Analytics {
       return Promise.resolve();
     }
 
-    // remove items from the queue before awaiting for the pending flush
-    // to avoid concurrent events triggering unnecessary flush API calls
-    const items = this.queue.splice(0, this.flushAt);
-
     try {
       if (this.pendingFlush) {
         await this.pendingFlush;
@@ -624,6 +620,12 @@ class Analytics {
       throw err;
     }
 
+    const items = this.queue.splice(0, this.flushAt);
+    // Do not proceed in case the items array is empty
+    if (items.length === 0) {
+      setImmediate(callback);
+      return Promise.resolve();
+    }
     const callbacks = items.map((item) => item.callback);
     const messages = items.map((item) => {
       // if someone mangles directly with queue
