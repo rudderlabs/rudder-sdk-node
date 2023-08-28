@@ -621,6 +621,11 @@ class Analytics {
     }
 
     const items = this.queue.splice(0, this.flushAt);
+    // Do not proceed in case the items array is empty
+    if (items.length === 0) {
+      setImmediate(callback);
+      return Promise.resolve();
+    }
     const callbacks = items.map((item) => item.callback);
     const messages = items.map((item) => {
       // if someone mangles directly with queue
