@@ -1,6 +1,7 @@
 /* eslint-disable no-param-reassign */
 /* eslint-disable no-underscore-dangle */
 /* eslint-disable no-eval */
+/* eslint-disable prefer-destructuring */
 
 const assert = require('assert');
 const removeSlash = require('remove-trailing-slash');
@@ -13,15 +14,12 @@ const { v4: uuid } = require('uuid');
 const md5 = require('md5');
 const isString = require('lodash.isstring');
 const cloneDeep = require('lodash.clonedeep');
-const winston = require('winston');
 const zlib = require('zlib');
-const version = require('./package.json').version;
+const Logger = require('./Logger').Logger;
+const LOG_LEVEL_MAP = require('./Logger').LOG_LEVEL_MAP;
+const version = require('../package.json').version;
 
 const gzip = zlib.gzipSync;
-const logFormat = winston.format.printf(
-  ({ level, message, label, timestamp }) => `${timestamp} [${label}] ${level}: ${message}`,
-);
-
 const setImmediate = global.setImmediate || process.nextTick.bind(process);
 const noop = () => {};
 
@@ -103,15 +101,7 @@ class Analytics {
       value: typeof enable === 'boolean' ? enable : true,
     });
 
-    this.logger = winston.createLogger({
-      level: this.logLevel,
-      format: winston.format.combine(
-        winston.format.label({ label: 'Rudder' }),
-        winston.format.timestamp(),
-        logFormat,
-      ),
-      transports: [new winston.transports.Console()],
-    });
+    this.logger = new Logger(LOG_LEVEL_MAP[this.logLevel]);
 
     if (retryCount !== 0) {
       axiosRetry(this.axiosInstance, {
@@ -136,19 +126,19 @@ class Analytics {
     const jobOpts = this.pJobOpts;
 
     this.pQueue.on('failed', function (job, error) {
-      const jobData = eval('(' + job.data.eventData + ')');
+      const jobData = eval(`(${job.data.eventData})`);
       this.logger.error(`job : ${jobData.description} ${error}`);
     });
 
     // tapping on queue events
     this.pQueue.on('completed', function (job, result) {
-      const jobData = eval('(' + job.data.eventData + ')');
+      const jobData = eval(`(${job.data.eventData})`);
       result = result || 'completed';
       this.logger.debug(`job : ${jobData.description} ${result}`);
     });
 
     this.pQueue.on('stalled', function (job) {
-      const jobData = eval('(' + job.data.eventData + ')');
+      const jobData = eval(`(${job.data.eventData})`);
       this.logger.warn(`job : ${jobData.description} is stalled...`);
     });
 
@@ -156,7 +146,7 @@ class Analytics {
       // job failed for maxAttempts or more times, push to failed queue
       // starting with attempt = 0
       const maxAttempts = jobOpts.maxAttempts || 10;
-      const jobData = eval('(' + job.data.eventData + ')');
+      const jobData = eval(`(${job.data.eventData})`);
       if (jobData.attempts >= maxAttempts) {
         done(
           new Error(
@@ -318,7 +308,7 @@ class Analytics {
                     .remove()
                     .then(() => {
                       this.logger.debug('success removed active job');
-                      const jobData = eval('(' + job.data.eventData + ')');
+                      const jobData = eval(`(${job.data.eventData})`);
                       jobData.attempts = 0;
                       this.pQueue
                         .add({ eventData: serialize(jobData) }, { lifo: true })
@@ -631,6 +621,11 @@ class Analytics {
     }
 
     const items = this.queue.splice(0, this.flushAt);
+    // Do not proceed in case the items array is empty
+    if (items.length === 0) {
+      setImmediate(callback);
+      return Promise.resolve();
+    }
     const callbacks = items.map((item) => item.callback);
     const messages = items.map((item) => {
       // if someone mangles directly with queue

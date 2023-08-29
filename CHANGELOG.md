@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [2.0.4](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.0.3...v2.0.4) (2023-08-28)
+
+
+### Bug Fixes
+
+* concurrent event triggering unnecessary flush call ([#113](https://github.com/rudderlabs/rudder-sdk-node/issues/113)) ([5dd8999](https://github.com/rudderlabs/rudder-sdk-node/commit/5dd89999a7625c999434016dbf3bd6d509d7417a))
+* remove winston logger dependency to enable serverless environments ([#112](https://github.com/rudderlabs/rudder-sdk-node/issues/112)) ([3619247](https://github.com/rudderlabs/rudder-sdk-node/commit/36192471055fdfc2032223986267715c2b48d4c4))
+
 ### [2.0.3](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.0.2...v2.0.3) (2023-06-30)
 
 
