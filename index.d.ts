@@ -294,5 +294,5 @@ declare class Analytics {
    * @param {Function} [callback] (optional)
    * @return {Analytics}
    */
-  flush(callback?: Function): Analytics;
+  flush(callback?: Function): Promise<Analytics | void>;
 }

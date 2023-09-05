@@ -5,7 +5,6 @@
 
 const assert = require('assert');
 const removeSlash = require('remove-trailing-slash');
-const looselyValidate = require('@segment/loosely-validate-event');
 const serialize = require('serialize-javascript');
 const axios = require('axios');
 const axiosRetry = require('axios-retry');
@@ -15,6 +14,7 @@ const md5 = require('md5');
 const isString = require('lodash.isstring');
 const cloneDeep = require('lodash.clonedeep');
 const zlib = require('zlib');
+const looselyValidate = require('./loosely-validate-event');
 const Logger = require('./Logger').Logger;
 const LOG_LEVEL_MAP = require('./Logger').LOG_LEVEL_MAP;
 const version = require('../package.json').version;
