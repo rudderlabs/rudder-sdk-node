@@ -55,6 +55,8 @@ export interface constructorOptions {
  * Represents the callback in the APIs
  */
 export type apiCallback = () => void;
+export type FlushCallback = (error?: Error, data?: any) => void;
+
 declare class Analytics {
   /**
    * Initialize a new `Analytics` with your RudderStack project's `writeKey` and an
@@ -292,7 +294,7 @@ declare class Analytics {
    * Flush the current queue
    *
    * @param {Function} [callback] (optional)
-   * @return {Analytics}
+   * @return
    */
-  flush(callback?: Function): Promise<Analytics | void>;
+  flush(callback?: FlushCallback): Promise<void>;
 }
