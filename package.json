@@ -11,7 +11,7 @@
     "name": ""
   },
   "engines": {
-    "node": ">=4"
+    "node": ">=12"
   },
   "size-limit": [
     {
@@ -38,6 +38,7 @@
     "format": "prettier --write .",
     "lint:fix": "eslint . --fix",
     "prepare": "husky install",
+    "postinstall": "patch-package",
     "pre-commit": "npm run test && npx lint-staged",
     "commit-msg": "commitlint --edit",
     "commit": "git-cz",
@@ -49,9 +50,10 @@
     "analytics"
   ],
   "dependencies": {
-    "@segment/loosely-validate-event": "2.0.0",
     "axios": "0.26.0",
-    "axios-retry": "3.5.1",
+    "axios-retry": "3.7.0",
+    "component-type": "1.2.1",
+    "join-component": "1.1.0",
     "lodash.clonedeep": "4.5.0",
     "lodash.isstring": "4.0.1",
     "md5": "2.3.0",
@@ -61,8 +63,8 @@
     "uuid": "8.3.2"
   },
   "devDependencies": {
-    "@babel/eslint-parser": "7.22.9",
-    "@commitlint/config-conventional": "17.6.7",
+    "@babel/eslint-parser": "7.22.15",
+    "@commitlint/config-conventional": "17.7.0",
     "@digitalroute/cz-conventional-changelog-for-jira": "8.0.1",
     "@size-limit/preset-app": "8.2.6",
     "auto-changelog": "2.4.0",
@@ -76,31 +78,31 @@
     "babel-preset-es2015": "6.24.1",
     "basic-auth": "2.0.1",
     "body-parser": "1.20.2",
-    "codecov": "3.8.1",
     "commander": "9.0.0",
     "commitizen": "4.3.0",
-    "commitlint": "17.6.7",
+    "commitlint": "17.7.1",
     "conventional-changelog-cli": "2.2.2",
     "conventional-github-releaser": "3.1.5",
     "delay": "5.0.0",
     "dotenv": "16.3.1",
-    "eslint": "8.45.0",
+    "eslint": "8.48.0",
     "eslint-config-airbnb": "19.0.4",
     "eslint-config-airbnb-base": "15.0.0",
-    "eslint-config-prettier": "8.8.0",
+    "eslint-config-prettier": "9.0.0",
     "eslint-plugin-compat": "4.2.0",
-    "eslint-plugin-import": "2.27.5",
-    "eslint-plugin-sonarjs": "0.19.0",
+    "eslint-plugin-import": "2.28.1",
+    "eslint-plugin-sonarjs": "0.21.0",
     "eslint-plugin-unicorn": "48.0.1",
     "express": "4.18.2",
     "husky": "8.0.3",
     "jscpd": "3.5.9",
-    "lint-staged": "13.2.3",
-    "madge": "5.0.1",
+    "lint-staged": "14.0.1",
+    "madge": "6.1.0",
     "np": "7.7.0",
     "nyc": "15.1.0",
+    "patch-package": "^8.0.0",
     "pify": "5.0.0",
-    "prettier": "2.8.8",
+    "prettier": "3.0.3",
     "sinon": "7.5.0",
     "size-limit": "8.2.6",
     "standard": "12.0.1",
@@ -124,7 +126,7 @@
     "http-cache-semantics": "4.1.1"
   },
   "optionalDependencies": {
-    "bull": "4.10.2"
+    "bull": "4.11.3"
   },
   "lint-staged": {
     "*.js": "eslint --cache --fix",
