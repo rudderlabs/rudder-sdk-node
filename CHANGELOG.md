@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [2.0.5](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.0.4...v2.0.5) (2023-09-20)
+
+
+### Bug Fixes
+
+* correct type for flush & bring in loosely-validate-event package ([#118](https://github.com/rudderlabs/rudder-sdk-node/issues/118)) ([e782caf](https://github.com/rudderlabs/rudder-sdk-node/commit/e782caf19a936c3091b9f0059f9683fc3b8af7d6))
+
 ### [2.0.4](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.0.3...v2.0.4) (2023-08-28)
 
 

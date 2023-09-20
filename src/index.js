@@ -5,7 +5,6 @@
 
 const assert = require('assert');
 const removeSlash = require('remove-trailing-slash');
-const looselyValidate = require('@segment/loosely-validate-event');
 const serialize = require('serialize-javascript');
 const axios = require('axios');
 const axiosRetry = require('axios-retry');
@@ -15,6 +14,7 @@ const md5 = require('md5');
 const isString = require('lodash.isstring');
 const cloneDeep = require('lodash.clonedeep');
 const zlib = require('zlib');
+const looselyValidate = require('./loosely-validate-event');
 const Logger = require('./Logger').Logger;
 const LOG_LEVEL_MAP = require('./Logger').LOG_LEVEL_MAP;
 const version = require('../package.json').version;
@@ -168,6 +168,7 @@ class Analytics {
             // if request succeeded, mark the job done and move to completed
             axiosInstance
               .post(`${host}${path}`, req.data, req)
+              // eslint-disable-next-line no-unused-vars
               .then((response) => {
                 rdone(jobData.callbacks);
                 done();
@@ -177,7 +178,7 @@ class Analytics {
                 const isRetryable = _isErrorRetryable(err);
                 this.logger.debug(`Request is ${isRetryable ? '' : 'not'} to be retried`);
                 if (isRetryable) {
-                  const { attempts } = jobData;
+                  const { attempts, description, callbacks } = jobData;
                   jobData.attempts = attempts + 1;
                   this.logger.debug(`Request retry attempt ${attempts}`);
                   // increment attempt
@@ -187,15 +188,13 @@ class Analytics {
                   // in case of redis queue error, mark the job as failed ? i.e add the catch block in below promise ?
                   payloadQueue
                     .add({ eventData: serialize(jobData) }, { lifo: true })
+                    // eslint-disable-next-line no-unused-vars
                     .then((pushedJob) => {
-                      done(
-                        null,
-                        `job : ${jobData.description} failed for attempt ${attempts} ${err}`,
-                      );
+                      done(null, `job : ${description} failed for attempt ${attempts} ${err}`);
                     })
                     .catch((error) => {
-                      this.logger.error(`failed to requeue job ${jobData.description}`);
-                      rdone(jobData.callbacks, error);
+                      this.logger.error(`failed to requeue job ${description}`);
+                      rdone(callbacks, error);
                       done(error);
                     });
                 } else {
@@ -253,6 +252,7 @@ class Analytics {
       return;
     }
 
+    // eslint-disable-next-line import/no-extraneous-dependencies,global-require
     const Queue = require('bull');
 
     this.pQueueOpts = queueOpts || {};
@@ -312,6 +312,7 @@ class Analytics {
                       jobData.attempts = 0;
                       this.pQueue
                         .add({ eventData: serialize(jobData) }, { lifo: true })
+                        // eslint-disable-next-line no-unused-vars
                         .then((removedJob) => {
                           this.logger.debug('success adding removed job back to queue');
                           this.addPersistentQueueProcessor();
@@ -495,6 +496,7 @@ class Analytics {
     callback = callback || noop;
 
     if (!this.enable) {
+      // eslint-disable-next-line consistent-return
       return setImmediate(callback);
     }
 
@@ -569,9 +571,9 @@ class Analytics {
    * Flush the current queue
    *
    * @param {Function} [callback] (optional)
-   * @return {Analytics}
    */
 
+  // eslint-disable-next-line consistent-return
   async flush(callback) {
     // check if earlier flush was pushed to queue
     this.logger.debug('in flush');
@@ -689,6 +691,7 @@ class Analytics {
       // using serialize library as default JSON.stringify mangles with function/callback serialization
       this.pQueue
         .add({ eventData: serialize(eventData) })
+        // eslint-disable-next-line no-unused-vars
         .then((pushedJob) => {
           this.logger.debug('pushed job to queue');
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
@@ -728,6 +731,7 @@ class Analytics {
           // Retry invalid write key while during unit test run. Server responds with 404 status for invalid key
           if (isDuringTestExecution) {
             done();
+            // eslint-disable-next-line consistent-return
             return;
           }
 
