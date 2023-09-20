@@ -38,7 +38,7 @@
     "format": "prettier --write .",
     "lint:fix": "eslint . --fix",
     "prepare": "husky install",
-    "postinstall": "patch-package",
+    "postinstall": "npx patch-package",
     "pre-commit": "npm run test && npx lint-staged",
     "commit-msg": "commitlint --edit",
     "commit": "git-cz",
