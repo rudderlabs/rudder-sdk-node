@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [2.0.6](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.0.5...v2.0.6) (2023-11-07)
+
+
+### Bug Fixes
+
+* log level priority ([#126](https://github.com/rudderlabs/rudder-sdk-node/issues/126)) ([96e1990](https://github.com/rudderlabs/rudder-sdk-node/commit/96e1990447e1c7cfed598aace4de93c8813f015c))
+* security vulnerabilities upgrade axios from 0.26.0 to 1.6.0 ([#125](https://github.com/rudderlabs/rudder-sdk-node/issues/125)) ([83c18ff](https://github.com/rudderlabs/rudder-sdk-node/commit/83c18ff0d6c54f40e087e39001e0aa295bfe4e08))
+
 ### [2.0.5](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.0.4...v2.0.5) (2023-09-20)
 
 
