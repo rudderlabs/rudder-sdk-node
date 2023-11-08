@@ -1,8 +1,8 @@
 const LOG_MSG_PREFIX = 'Rudder';
 const LOG_LEVEL_MAP = {
   log: 0,
-  info: 1,
-  debug: 2,
+  debug: 1,
+  info: 2,
   warn: 3,
   error: 4,
   none: 5,
