@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [2.0.7](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.0.6...v2.0.7) (2024-01-29)
+
+
+### Bug Fixes
+
+* update vulnerable packages ([#135](https://github.com/rudderlabs/rudder-sdk-node/issues/135)) ([9121dbe](https://github.com/rudderlabs/rudder-sdk-node/commit/9121dbed0d463ba02fb7bbba84326bdf03d31efa))
+
 ### [2.0.6](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.0.5...v2.0.6) (2023-11-07)
 
 
