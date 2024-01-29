@@ -1,6 +1,8 @@
+## [![Releases](https://img.shields.io/github/release/rudderlabs/rudder-sdk-node.svg)](https://github.com/rudderlabs/rudder-sdk-node/releases) [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=rudderlabs_rudder-sdk-node&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=rudderlabs_rudder-sdk-node) [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=rudderlabs_rudder-sdk-node&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=rudderlabs_rudder-sdk-node) [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=rudderlabs_rudder-sdk-node&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=rudderlabs_rudder-sdk-node) [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=rudderlabs_rudder-sdk-node&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=rudderlabs_rudder-sdk-node) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=rudderlabs_rudder-sdk-node&metric=coverage)](https://sonarcloud.io/summary/new_code?id=rudderlabs_rudder-sdk-node)
+
 <p align="center">
   <a href="https://rudderstack.com/">
-    <img src="https://user-images.githubusercontent.com/59817155/121357083-1c571300-c94f-11eb-8cc7-ce6df13855c9.png">
+    <img src="https://raw.githubusercontent.com/rudderlabs/rudder-sdk-js/develop/assets/rs-logo-full-light.jpg">
   </a>
 </p>
 
