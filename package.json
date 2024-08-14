@@ -1,6 +1,6 @@
 {
   "name": "@rudderstack/rudder-sdk-node",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "description": "Rudder Node SDK",
   "main": "./cjs/index.js",
   "module": "./esm/index.js",
@@ -26,8 +26,8 @@
     "build": "babel src/index.js --out-dir dist",
     "build:cjs": "tsc -p tsconfig.json --outDir ./dist/cjs --module commonjs",
     "build:esm": "tsc -p tsconfig.json",
-    "test": "AVA_MODE_ON=true nyc --reporter=lcov --reporter=html --reporter=text ava --serial --verbose  > coverage.lcov",
-    "test:ci": "AVA_MODE_ON=true nyc --reporter=lcov --reporter=html --reporter=text ava --serial --verbose  > coverage.lcov",
+    "test": "AVA_MODE_ON=true nyc --reporter=lcov --reporter=html --reporter=text --reporter=text-summary ava --serial --verbose",
+    "test:ci": "AVA_MODE_ON=true nyc --reporter=lcov --reporter=text --reporter=text-summary --reporter=clover ava --serial --verbose",
     "changelog": "auto-changelog -p -t keepachangelog -u true -l false --sort-commits date-desc ",
     "generateHistory": "auto-changelog -p -r origin --tag-prefix v --tag-pattern 'v(1.0.(0|[1-9]d*)|1.1.[0-4]|2.(0|[1-9]d*).(0|[1-9]d*))' -l false -o HISTORY.md -t keepachangelog",
     "check:lint": "eslint src",
@@ -49,7 +49,7 @@
     "analytics"
   ],
   "dependencies": {
-    "axios": "1.6.5",
+    "axios": "1.7.4",
     "axios-retry": "3.7.0",
     "component-type": "1.2.1",
     "join-component": "1.1.0",

@@ -9,6 +9,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@rudderstack/rudder-sdk-node": "^1.1.4"
+    "@rudderstack/rudder-sdk-node": "*"
   }
 }
