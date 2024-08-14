@@ -22,7 +22,7 @@
   ],
   "scripts": {
     "size": "size-limit",
-    "copy:assets": "cp package.json dist/ && cp readme.md dist/ && cp CHANGELOG.md dist/ && cp LICENSE.md dist/ && cp index.d.ts dist/",
+    "copy:assets": "cp package.json dist/ && cp README.md dist/ && cp CHANGELOG.md dist/ && cp LICENSE.md dist/ && cp index.d.ts dist/",
     "build": "babel src/index.js --out-dir dist",
     "build:cjs": "tsc -p tsconfig.json --outDir ./dist/cjs --module commonjs",
     "build:esm": "tsc -p tsconfig.json",
