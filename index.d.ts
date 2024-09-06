@@ -57,6 +57,57 @@ export interface constructorOptions {
 export type apiCallback = () => void;
 export type FlushCallback = (error?: Error, data?: any) => void;
 
+type IdentityOptions =
+  | { userId: string; anonymousId?: string }
+  | { userId?: string; anonymousId: string };
+
+export type IdentifyParams = {
+  context?: apiObject;
+  traits?: apiObject;
+  integrations?: integrationOptions;
+  timestamp?: Date;
+} & IdentityOptions;
+
+export type PageParams = {
+  name: string;
+  context?: apiObject;
+  properties?: apiObject;
+  integrations?: integrationOptions;
+  timestamp?: Date;
+} & IdentityOptions;
+
+export type TrackParams = {
+  event: string;
+  context?: apiObject;
+  properties?: apiObject;
+  integrations?: integrationOptions;
+  timestamp?: Date;
+} & IdentityOptions;
+
+export type GroupParams = {
+  groupId: string;
+  context?: apiObject;
+  traits?: apiObject;
+  integrations?: integrationOptions;
+  timestamp?: Date;
+} & IdentityOptions;
+
+export type ScreenParams = {
+  name: string;
+  context?: apiObject;
+  properties?: apiObject;
+  integrations?: integrationOptions;
+  timestamp?: Date;
+} & IdentityOptions;
+
+export type AliasParams = {
+  previousId: string;
+  context?: apiObject;
+  properties?: apiObject;
+  integrations?: integrationOptions;
+  timestamp?: Date;
+} & IdentityOptions;
+
 declare class Analytics {
   /**
    * Initialize a new `Analytics` with your RudderStack project's `writeKey` and an
@@ -145,17 +196,7 @@ declare class Analytics {
    * @param {Function=} callback (optional)
    * @return {Analytics}
    */
-  identify(
-    message: {
-      userId?: string;
-      anonymousId?: string;
-      context?: apiObject;
-      traits?: apiObject;
-      integrations?: integrationOptions;
-      timestamp?: Date;
-    },
-    callback?: apiCallback,
-  ): Analytics;
+  identify(message: IdentifyParams, callback?: apiCallback): Analytics;
   /**
    * Send a group `message`.
    *
@@ -170,18 +211,7 @@ declare class Analytics {
    * @param {Function=} callback (optional)
    * @return {Analytics}
    */
-  group(
-    message: {
-      groupId: string;
-      userId?: string;
-      anonymousId?: string;
-      context?: apiObject;
-      traits?: apiObject;
-      integrations?: integrationOptions;
-      timestamp?: Date;
-    },
-    callback?: apiCallback,
-  ): Analytics;
+  group(message: GroupParams, callback?: apiCallback): Analytics;
   /**
    * Send a track `message`.
    *
@@ -196,18 +226,7 @@ declare class Analytics {
    * @param {Function=} callback (optional)
    * @return {Analytics}
    */
-  track(
-    message: {
-      event: string;
-      userId?: string;
-      anonymousId?: string;
-      context?: apiObject;
-      properties?: apiObject;
-      integrations?: integrationOptions;
-      timestamp?: Date;
-    },
-    callback?: apiCallback,
-  ): Analytics;
+  track(message: TrackParams, callback?: apiCallback): Analytics;
 
   /**
    * Send a page `message`.
@@ -223,18 +242,7 @@ declare class Analytics {
    * @param {Function=} callback (optional)
    * @return {Analytics}
    */
-  page(
-    message: {
-      name: string;
-      userId?: string;
-      anonymousId?: string;
-      context?: apiObject;
-      properties?: apiObject;
-      integrations?: integrationOptions;
-      timestamp?: Date;
-    },
-    callback?: apiCallback,
-  ): Analytics;
+  page(message: PageParams, callback?: apiCallback): Analytics;
 
   /**
    * Send a screen `message`.
@@ -250,18 +258,7 @@ declare class Analytics {
    * @param {Function=} callback (optional)
    * @return {Analytics}
    */
-  screen(
-    message: {
-      name: string;
-      userId?: string;
-      anonymousId?: string;
-      context?: apiObject;
-      properties?: apiObject;
-      integrations?: integrationOptions;
-      timestamp?: Date;
-    },
-    callback?: apiCallback,
-  ): Analytics;
+  screen(message: ScreenParams, callback?: apiCallback): Analytics;
 
   /**
    * Send an alias `message`.
@@ -277,18 +274,7 @@ declare class Analytics {
    * @param {Function=} callback (optional)
    * @return {Analytics}
    */
-  alias(
-    message: {
-      previousId: string;
-      userId?: string;
-      anonymousId?: string;
-      context?: apiObject;
-      properties?: apiObject;
-      integrations?: integrationOptions;
-      timestamp?: Date;
-    },
-    callback?: apiCallback,
-  ): Analytics;
+  alias(message: AliasParams, callback?: apiCallback): Analytics;
 
   /**
    * Flush the current queue
