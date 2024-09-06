@@ -57,64 +57,56 @@ export interface constructorOptions {
 export type apiCallback = () => void;
 export type FlushCallback = (error?: Error, data?: any) => void;
 
+type IdentityOptions =
+  | { userId: string; anonymousId?: string }
+  | { userId?: string; anonymousId: string };
+
 export type IdentifyParams = {
-  userId?: string;
-  anonymousId?: string;
   context?: apiObject;
   traits?: apiObject;
   integrations?: integrationOptions;
   timestamp?: Date;
-};
+} & IdentityOptions;
 
 export type PageParams = {
   name: string;
-  userId?: string;
-  anonymousId?: string;
   context?: apiObject;
   properties?: apiObject;
   integrations?: integrationOptions;
   timestamp?: Date;
-};
+} & IdentityOptions;
 
 export type TrackParams = {
   event: string;
-  userId?: string;
-  anonymousId?: string;
   context?: apiObject;
   properties?: apiObject;
   integrations?: integrationOptions;
   timestamp?: Date;
-};
+} & IdentityOptions;
 
 export type GroupParams = {
   groupId: string;
-  userId?: string;
-  anonymousId?: string;
   context?: apiObject;
   traits?: apiObject;
   integrations?: integrationOptions;
   timestamp?: Date;
-};
+} & IdentityOptions;
 
 export type ScreenParams = {
   name: string;
-  userId?: string;
-  anonymousId?: string;
   context?: apiObject;
   properties?: apiObject;
   integrations?: integrationOptions;
   timestamp?: Date;
-};
+} & IdentityOptions;
 
 export type AliasParams = {
   previousId: string;
-  userId?: string;
-  anonymousId?: string;
   context?: apiObject;
   properties?: apiObject;
   integrations?: integrationOptions;
   timestamp?: Date;
-};
+} & IdentityOptions;
 
 declare class Analytics {
   /**
