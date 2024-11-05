@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.1.0](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.0.10...v2.1.0) (2024-11-04)
+
+
+### Features
+
+* add date datatype ([#154](https://github.com/rudderlabs/rudder-sdk-node/issues/154)) ([cf714ae](https://github.com/rudderlabs/rudder-sdk-node/commit/cf714ae40ab1a7978feb8edd79de9236b3115f3f))
+
 ### [2.0.10](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.0.9...v2.0.10) (2024-09-06)
 
 ### [2.0.9](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.0.8...v2.0.9) (2024-08-14)
