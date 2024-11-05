@@ -1,4 +1,4 @@
-const axios = require("axios");
+const axios = require('axios');
 const Rudderanalytics = require('@rudderstack/rudder-sdk-node'); // use version 2.x.x
 require('dotenv').config({ path: '../../.env' });
 
@@ -11,16 +11,18 @@ axiosInstanceWithInterceptors.interceptors.response.use(
     // Any status code that lie within the range of 2xx cause this function to trigger
     // Do something with response data
     return response;
-  }, function (error) {
+  },
+  function (error) {
     // Any status codes that falls outside the range of 2xx cause this function to trigger
     // Do something with response error
-    if(error.response.status === 404) {
-      console.log(error.config.url)
-      console.log(error.config.headers)
-      console.log(error.config.data)
+    if (error.response.status === 404) {
+      console.log(error.config.url);
+      console.log(error.config.headers);
+      console.log(error.config.data);
     }
     return Promise.reject(error);
-  });
+  },
+);
 
 const client = new Rudderanalytics(writeKey, {
   axiosInstance: axiosInstanceWithInterceptors,

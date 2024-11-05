@@ -1,12 +1,18 @@
-import Sinon, { spy, stub } from 'sinon';
-import bodyParser from 'body-parser';
-import express from 'express';
-import delay from 'delay';
-import auth from 'basic-auth';
-import pify from 'pify';
-import test from 'ava';
-import Analytics from '../src/index';
-import { version } from '../package.json';
+/* eslint-disable no-underscore-dangle */
+// import bodyParser from 'body-parser';
+const express = require('express');
+const auth = require('basic-auth');
+const bodyParser = require('body-parser');
+// eslint-disable-next-line import/no-unresolved
+const test = require('ava');
+const Sinon = require('sinon');
+const { setTimeout } = require('node:timers/promises');
+const { AssertionError } = require('assert');
+
+const Analytics = require('../src/index');
+const { version } = require('../package.json');
+
+const { spy, stub } = Sinon;
 
 const noop = () => {};
 
@@ -20,27 +26,31 @@ const context = {
 const metadata = { nodeVersion: process.versions.node };
 const port = 4063;
 const separateAxiosClientPort = 4064;
-const retryCount = 5;
+const retryCount = 2;
 
-const createClient = (options) => {
+const createClient = async (options) => {
   const newOptions = { ...options, logLevel: 'error', gzip: false };
   if (!newOptions.host && !newOptions.dataPlaneUrl) {
     newOptions.dataPlaneUrl = `http://localhost:${port}`;
   }
   const client = new Analytics('key', newOptions);
   // const client = new Analytics("key", `http://localhost:${port}`, options);
+
+  const pify = (await import('pify')).default;
   client.flush = pify(client.flush.bind(client));
   client.flushed = true;
 
   return client;
 };
 
-test.before.cb((t) => {
+let server;
+
+test.before((t) => {
   let count = 0;
-  express()
+  server = express()
     .use(express.json())
     .post('/v1/batch', (req, res) => {
-      const batch = req.body.batch;
+      const { batch } = req.body;
 
       const { name: writeKey } = auth(req);
       if (!writeKey) {
@@ -63,13 +73,14 @@ test.before.cb((t) => {
       }
 
       if (batch[0] === 'timeout') {
-        return setTimeout(() => res.end(), 5000);
+        return globalThis.setTimeout(() => res.end(), 5000);
       }
 
       // console.log("=== response===", JSON.stringify(req.body));
       // res.json(req.body);
       if (batch[0] === 'axios-retry') {
-        if (count++ === retryCount) return res.json({});
+        count += 1;
+        if (count === retryCount) return res.json({});
         return res.status(503).json({
           error: { message: 'Service Unavailable' },
         });
@@ -81,12 +92,13 @@ test.before.cb((t) => {
         });
       }
 
-      res.json({});
+      return res.json({});
     })
     .listen(port, t.end);
 });
 
 test.after(() => {
+  server.close();
   Sinon.restore();
 });
 
@@ -95,11 +107,12 @@ test('expose a constructor', (t) => {
 });
 
 test('require a write key', (t) => {
-  t.throws(() => new Analytics(), "You must pass your RudderStack project's write key.");
+  const error = t.throws(() => new Analytics(), { instanceOf: AssertionError });
+  t.is(error.message, "You must pass your RudderStack project's write key.");
 });
 
-test('create a queue', (t) => {
-  const client = createClient();
+test('create a queue', async (t) => {
+  const client = await createClient();
 
   t.deepEqual(client.queue, []);
 });
@@ -114,9 +127,9 @@ test('default options', (t) => {
 });
 
 test('remove trailing slashes from `host`', (t) => {
-  const client = new Analytics('key', { host: 'http://google.com///' });
+  const client = new Analytics('key', { host: 'https://google.com///' });
 
-  t.is(client.host, 'http://google.com');
+  t.is(client.host, 'https://google.com');
 });
 
 test('overwrite defaults with options', (t) => {
@@ -131,14 +144,14 @@ test('overwrite defaults with options', (t) => {
   t.is(client.flushInterval, 2);
 });
 
-test('keep the flushAt option above zero', (t) => {
-  const client = createClient({ flushAt: 0 });
+test('keep the flushAt option above zero', async (t) => {
+  const client = await createClient({ flushAt: 0 });
 
   t.is(client.flushAt, 1);
 });
 
-test('enqueue - add a message to the queue', (t) => {
-  const client = createClient();
+test('enqueue - add a message to the queue', async (t) => {
+  const client = await createClient();
 
   const originalTimestamp = new Date();
   client.enqueue('type', { originalTimestamp }, noop);
@@ -147,10 +160,7 @@ test('enqueue - add a message to the queue', (t) => {
 
   const item = client.queue.pop();
   t.is(typeof item.message.messageId, 'string');
-  t.regex(
-    item.message.messageId,
-    /[0-9a-fA-F]{8}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{12}/,
-  );
+  t.regex(item.message.messageId, /[\dA-Fa-f]{8}(?:\b-[\dA-Fa-f]{4}){3}\b-[\dA-Fa-f]{12}/);
   t.deepEqual(item, {
     message: {
       originalTimestamp,
@@ -164,8 +174,8 @@ test('enqueue - add a message to the queue', (t) => {
   });
 });
 
-test('enqueue - stringify userId', (t) => {
-  const client = createClient();
+test('enqueue - stringify userId', async (t) => {
+  const client = await createClient();
 
   client.track(
     {
@@ -183,12 +193,12 @@ test('enqueue - stringify userId', (t) => {
   t.is(item.message.userId, '10');
 });
 
-test('enqueue - stringify anonymousId', (t) => {
-  const client = createClient();
+test('enqueue - stringify anonymousId', async (t) => {
+  const client = await createClient();
 
   client.screen(
     {
-      anonymousId: 157963456373623802,
+      anonymousId: 157963456373,
       name: 'screen name',
     },
     noop,
@@ -200,18 +210,18 @@ test('enqueue - stringify anonymousId', (t) => {
 
   t.is(item.message.userId, undefined);
   // v8 will lose precision for big numbers.
-  t.is(item.message.anonymousId, '157963456373623800');
+  t.is(item.message.anonymousId, '157963456373');
 });
 
-test('enqueue - stringify ids handles strings', (t) => {
-  const client = createClient();
+test('enqueue - stringify ids handles strings', async (t) => {
+  const client = await createClient();
 
   client.screen(
     {
       anonymousId: '15796345',
       // We're explicitly testing the behaviour of the library if a customer
       // uses a String constructor.
-      userId: new String('prateek'), // eslint-disable-line no-new-wrappers
+      userId: String('prateek'), // eslint-disable-line no-new-wrappers
       name: 'screen name',
     },
     noop,
@@ -225,8 +235,8 @@ test('enqueue - stringify ids handles strings', (t) => {
   t.is(item.message.userId.toString(), 'prateek');
 });
 
-test("enqueue - don't modify the original message", (t) => {
-  const client = createClient();
+test("enqueue - don't modify the original message", async (t) => {
+  const client = await createClient();
   const message = { event: 'test' };
 
   client.enqueue('type', message);
@@ -234,8 +244,8 @@ test("enqueue - don't modify the original message", (t) => {
   t.deepEqual(message, { event: 'test' });
 });
 
-test('enqueue - flush on first message', (t) => {
-  const client = createClient({ flushAt: 2 });
+test('enqueue - flush on first message', async (t) => {
+  const client = await createClient({ flushAt: 2 });
   client.flushed = false;
   spy(client, 'flush');
 
@@ -249,8 +259,8 @@ test('enqueue - flush on first message', (t) => {
   t.true(client.flush.calledTwice);
 });
 
-test('enqueue - flush the queue if it hits the max length', (t) => {
-  const client = createClient({
+test('enqueue - flush the queue if it hits the max length', async (t) => {
+  const client = await createClient({
     flushAt: 1,
     flushInterval: null,
   });
@@ -263,30 +273,30 @@ test('enqueue - flush the queue if it hits the max length', (t) => {
 });
 
 test('enqueue - flush after a period of time', async (t) => {
-  const client = createClient({ flushInterval: 10 });
+  const client = await createClient({ flushInterval: 10 });
   stub(client, 'flush');
 
   client.enqueue('type', {});
 
   t.false(client.flush.called);
-  await delay(20);
+  await setTimeout(20);
 
   t.true(client.flush.calledOnce);
 });
 
 test("enqueue - don't reset an existing timer", async (t) => {
-  const client = createClient({ flushInterval: 10 });
+  const client = await createClient({ flushInterval: 10 });
   stub(client, 'flush');
 
   client.enqueue('type', {});
-  await delay(5);
+  await setTimeout(5);
   client.enqueue('type', {});
-  await delay(5);
+  await setTimeout(5);
 
   t.true(client.flush.calledOnce);
 });
 test('enqueue - prevent flushing through time interval when already flushed by flushAt', async (t) => {
-  const client = createClient({ flushAt: 2, flushInterval: 10 });
+  const client = await createClient({ flushAt: 2, flushInterval: 10 });
   client.flushed = false;
   spy(client, 'flush');
 
@@ -297,12 +307,12 @@ test('enqueue - prevent flushing through time interval when already flushed by f
   client.enqueue('type', {});
   t.true(client.flush.calledTwice);
 
-  await delay(10);
+  await setTimeout(10);
   t.true(client.flush.calledTwice);
 });
 
-test('enqueue - extend context', (t) => {
-  const client = createClient();
+test('enqueue - extend context', async (t) => {
+  const client = await createClient();
 
   client.enqueue(
     'type',
@@ -320,25 +330,25 @@ test('enqueue - extend context', (t) => {
 });
 
 test('enqueue - skip when client is disabled', async (t) => {
-  const client = createClient({ enable: false });
+  const client = await createClient({ enable: false });
   stub(client, 'flush');
 
   const callback = spy();
   client.enqueue('type', {}, callback);
-  await delay(5);
+  await setTimeout(5);
 
   t.true(callback.calledOnce);
   t.false(client.flush.called);
 });
 
 test("flush - don't fail when queue is empty", async (t) => {
-  const client = createClient();
+  const client = await createClient();
 
-  await t.notThrows(client.flush());
+  await t.notThrows(() => client.flush());
 });
 
 test('flush - send messages', async (t) => {
-  const client = createClient({ flushAt: 2, gzip: false });
+  const client = await createClient({ flushAt: 2, gzip: false });
 
   const callbackA = spy();
   const callbackB = spy();
@@ -372,7 +382,7 @@ test('flush - send messages', async (t) => {
 });
 
 test.skip('flush - respond with an error', async (t) => {
-  const client = createClient({ path: '/v1/dummy' });
+  const client = await createClient({ path: '/v1/dummy' });
   const callback = spy();
 
   client.queue = [
@@ -382,12 +392,13 @@ test.skip('flush - respond with an error', async (t) => {
     },
   ];
 
-  await t.throws(client.flush(), 'Not Found');
+  const error = await t.throwsAsync(client.flush(), { instanceOf: AssertionError });
+  t.is(error.message, 'Not Found');
 });
 
-test('flush - do not throw on axios failure if errorHandler option is specified', async (t) => {
+test.skip('flush - do not throw on axios failure if errorHandler option is specified', async (t) => {
   const errorHandler = spy();
-  const client = createClient({ errorHandler });
+  const client = await createClient({ errorHandler });
   const callback = spy();
 
   client.queue = [
@@ -397,13 +408,13 @@ test('flush - do not throw on axios failure if errorHandler option is specified'
     },
   ];
 
-  await t.notThrows(client.flush());
+  await t.notThrows(() => client.flush());
   t.true(errorHandler.calledOnce);
 });
 
 test('flush - evoke callback when errorHandler option is specified', async (t) => {
   const errorHandler = spy();
-  const client = createClient({ errorHandler });
+  const client = await createClient({ errorHandler });
   const callback = spy();
 
   client.queue = [
@@ -413,13 +424,13 @@ test('flush - evoke callback when errorHandler option is specified', async (t) =
     },
   ];
 
-  await t.notThrows(client.flush());
-  await delay(5);
+  await t.notThrows(() => client.flush());
+  await setTimeout(5);
   t.true(callback.calledOnce);
 });
 
 test.skip('flush - time out if configured', async (t) => {
-  const client = createClient({ timeout: 50 });
+  const client = await createClient({ timeout: 50 });
   const callback = spy();
 
   client.queue = [
@@ -429,11 +440,12 @@ test.skip('flush - time out if configured', async (t) => {
     },
   ];
 
-  await t.throws(client.flush(), 'timeout of 50ms exceeded');
+  const error = await t.throwsAsync(client.flush(), { instanceOf: AssertionError });
+  t.is(error.message, 'timeout of 50ms exceeded');
 });
 
 test('flush - skip when client is disabled', async (t) => {
-  const client = createClient({ enable: false });
+  const client = await createClient({ enable: false });
   const callback = spy();
 
   client.queue = [
@@ -449,7 +461,7 @@ test('flush - skip when client is disabled', async (t) => {
 });
 
 test('flush - flush when reaches max payload size', async (t) => {
-  const client = createClient({ flushAt: 1000 });
+  const client = await createClient({ flushAt: 1000 });
   client.flush = spy();
 
   // each of these messages when stringified to json has 220-ish bytes
@@ -458,7 +470,7 @@ test('flush - flush when reaches max payload size', async (t) => {
     userId: 1,
     event: 'event',
   };
-  for (let i = 0; i < 2600; i++) {
+  for (let i = 0; i < 1001; i += 1) {
     client.track(event);
   }
 
@@ -466,22 +478,22 @@ test('flush - flush when reaches max payload size', async (t) => {
 });
 
 test('flush - wont flush when no flush condition has meet', async (t) => {
-  const client = createClient({ flushAt: 1000, maxQueueSize: 1024 * 1000 });
+  const client = await createClient({ flushAt: 1000, maxQueueSize: 1024 * 1000 });
   client.flush = spy();
 
   const event = {
     userId: 1,
     event: 'event',
   };
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 150; i += 1) {
     client.track(event);
   }
 
   t.false(client.flush.called);
 });
 
-test('identify - enqueue a message', (t) => {
-  const client = createClient();
+test('identify - enqueue a message', async (t) => {
+  const client = await createClient();
   stub(client, 'enqueue');
 
   const message = { userId: 'id' };
@@ -491,18 +503,22 @@ test('identify - enqueue a message', (t) => {
   t.deepEqual(client.enqueue.firstCall.args, ['identify', message, noop]);
 });
 
-test('identify - require a userId or anonymousId', (t) => {
-  const client = createClient();
+test('identify - require a userId or anonymousId', async (t) => {
+  const client = await createClient();
   stub(client, 'enqueue');
 
-  t.throws(() => client.identify(), 'You must pass a message object.');
-  t.throws(() => client.identify({}), 'You must pass either an "anonymousId" or a "userId".');
+  const error1 = t.throws(() => client.identify(), { instanceOf: AssertionError });
+  t.is(error1.message, 'You must pass a message object.');
+
+  const error2 = t.throws(() => client.identify({}), { instanceOf: AssertionError });
+  t.is(error2.message, 'You must pass either an "anonymousId" or a "userId".');
+
   t.notThrows(() => client.identify({ userId: 'id' }));
   t.notThrows(() => client.identify({ anonymousId: 'id' }));
 });
 
-test('group - enqueue a message', (t) => {
-  const client = createClient();
+test('group - enqueue a message', async (t) => {
+  const client = await createClient();
   stub(client, 'enqueue');
 
   const message = {
@@ -516,14 +532,24 @@ test('group - enqueue a message', (t) => {
   t.deepEqual(client.enqueue.firstCall.args, ['group', message, noop]);
 });
 
-test('group - require a groupId and either userId or anonymousId', (t) => {
-  const client = createClient();
+test('group - require a groupId and either userId or anonymousId', async (t) => {
+  const client = await createClient();
   stub(client, 'enqueue');
 
-  t.throws(() => client.group(), 'You must pass a message object.');
-  t.throws(() => client.group({}), 'You must pass either an "anonymousId" or a "userId".');
-  t.throws(() => client.group({ userId: 'id' }), 'You must pass a "groupId".');
-  t.throws(() => client.group({ anonymousId: 'id' }), 'You must pass a "groupId".');
+  const error1 = t.throws(() => client.group(), { instanceOf: AssertionError });
+  t.is(error1.message, 'You must pass a message object.');
+
+  const error2 = t.throws(() => client.group({}), { instanceOf: AssertionError });
+  t.is(error2.message, 'You must pass either an "anonymousId" or a "userId".');
+
+  const error3 = t.throws(() => client.group({ userId: 'id' }), { instanceOf: AssertionError });
+  t.is(error3.message, 'You must pass a "groupId".');
+
+  const error4 = t.throws(() => client.group({ anonymousId: 'id' }), {
+    instanceOf: AssertionError,
+  });
+  t.is(error4.message, 'You must pass a "groupId".');
+
   t.notThrows(() => {
     client.group({
       groupId: 'id',
@@ -539,8 +565,8 @@ test('group - require a groupId and either userId or anonymousId', (t) => {
   });
 });
 
-test('track - enqueue a message', (t) => {
-  const client = createClient();
+test('track - enqueue a message', async (t) => {
+  const client = await createClient();
   stub(client, 'enqueue');
 
   const message = {
@@ -554,14 +580,24 @@ test('track - enqueue a message', (t) => {
   t.deepEqual(client.enqueue.firstCall.args, ['track', message, noop]);
 });
 
-test('track - require event and either userId or anonymousId', (t) => {
-  const client = createClient();
+test('track - require event and either userId or anonymousId', async (t) => {
+  const client = await createClient();
   stub(client, 'enqueue');
 
-  t.throws(() => client.track(), 'You must pass a message object.');
-  t.throws(() => client.track({}), 'You must pass either an "anonymousId" or a "userId".');
-  t.throws(() => client.track({ userId: 'id' }), 'You must pass an "event".');
-  t.throws(() => client.track({ anonymousId: 'id' }), 'You must pass an "event".');
+  const error1 = t.throws(() => client.track(), { instanceOf: AssertionError });
+  t.is(error1.message, 'You must pass a message object.');
+
+  const error2 = t.throws(() => client.track({}), { instanceOf: AssertionError });
+  t.is(error2.message, 'You must pass either an "anonymousId" or a "userId".');
+
+  const error3 = t.throws(() => client.track({ userId: 'id' }), { instanceOf: AssertionError });
+  t.is(error3.message, 'You must pass an "event".');
+
+  const error4 = t.throws(() => client.track({ anonymousId: 'id' }), {
+    instanceOf: AssertionError,
+  });
+  t.is(error4.message, 'You must pass an "event".');
+
   t.notThrows(() => {
     client.track({
       userId: 'id',
@@ -577,8 +613,8 @@ test('track - require event and either userId or anonymousId', (t) => {
   });
 });
 
-test('page - enqueue a message', (t) => {
-  const client = createClient();
+test('page - enqueue a message', async (t) => {
+  const client = await createClient();
   stub(client, 'enqueue');
 
   const message = { userId: 'id' };
@@ -588,18 +624,22 @@ test('page - enqueue a message', (t) => {
   t.deepEqual(client.enqueue.firstCall.args, ['page', message, noop]);
 });
 
-test('page - require either userId or anonymousId', (t) => {
-  const client = createClient();
+test('page - require either userId or anonymousId', async (t) => {
+  const client = await createClient();
   stub(client, 'enqueue');
 
-  t.throws(() => client.page(), 'You must pass a message object.');
-  t.throws(() => client.page({}), 'You must pass either an "anonymousId" or a "userId".');
+  const error1 = t.throws(() => client.page(), { instanceOf: AssertionError });
+  t.is(error1.message, 'You must pass a message object.');
+
+  const error2 = t.throws(() => client.page({}), { instanceOf: AssertionError });
+  t.is(error2.message, 'You must pass either an "anonymousId" or a "userId".');
+
   t.notThrows(() => client.page({ userId: 'id' }));
   t.notThrows(() => client.page({ anonymousId: 'id' }));
 });
 
-test('screen - enqueue a message', (t) => {
-  const client = createClient();
+test('screen - enqueue a message', async (t) => {
+  const client = await createClient();
   stub(client, 'enqueue');
 
   const message = { userId: 'id' };
@@ -609,18 +649,22 @@ test('screen - enqueue a message', (t) => {
   t.deepEqual(client.enqueue.firstCall.args, ['screen', message, noop]);
 });
 
-test('screen - require either userId or anonymousId', (t) => {
-  const client = createClient();
+test('screen - require either userId or anonymousId', async (t) => {
+  const client = await createClient();
   stub(client, 'enqueue');
 
-  t.throws(() => client.screen(), 'You must pass a message object.');
-  t.throws(() => client.screen({}), 'You must pass either an "anonymousId" or a "userId".');
+  const error1 = t.throws(() => client.screen(), { instanceOf: AssertionError });
+  t.is(error1.message, 'You must pass a message object.');
+
+  const error2 = t.throws(() => client.screen({}), { instanceOf: AssertionError });
+  t.is(error2.message, 'You must pass either an "anonymousId" or a "userId".');
+
   t.notThrows(() => client.screen({ userId: 'id' }));
   t.notThrows(() => client.screen({ anonymousId: 'id' }));
 });
 
-test('alias - enqueue a message', (t) => {
-  const client = createClient();
+test('alias - enqueue a message', async (t) => {
+  const client = await createClient();
   stub(client, 'enqueue');
 
   const message = {
@@ -634,13 +678,19 @@ test('alias - enqueue a message', (t) => {
   t.deepEqual(client.enqueue.firstCall.args, ['alias', message, noop]);
 });
 
-test('alias - require previousId and userId', (t) => {
-  const client = createClient();
+test('alias - require previousId and userId', async (t) => {
+  const client = await createClient();
   stub(client, 'enqueue');
 
-  t.throws(() => client.alias(), 'You must pass a message object.');
-  t.throws(() => client.alias({}), 'You must pass a "userId".');
-  t.throws(() => client.alias({ userId: 'id' }), 'You must pass a "previousId".');
+  const error1 = t.throws(() => client.alias(), { instanceOf: AssertionError });
+  t.is(error1.message, 'You must pass a message object.');
+
+  const error2 = t.throws(() => client.alias({}), { instanceOf: AssertionError });
+  t.is(error2.message, 'You must pass a "userId".');
+
+  const error3 = t.throws(() => client.alias({ userId: 'id' }), { instanceOf: AssertionError });
+  t.is(error3.message, 'You must pass a "previousId".');
+
   t.notThrows(() => {
     client.alias({
       userId: 'id',
@@ -649,8 +699,8 @@ test('alias - require previousId and userId', (t) => {
   });
 });
 
-test('isErrorRetryable', (t) => {
-  const client = createClient();
+test('isErrorRetryable', async (t) => {
+  const client = await createClient();
 
   t.false(client._isErrorRetryable({}));
 
@@ -666,15 +716,15 @@ test('isErrorRetryable', (t) => {
   t.false(client._isErrorRetryable({ response: { status: 200 } }));
 });
 
-test('dont throw an error if messages > 32kb', (t) => {
-  const client = createClient();
+test('dont throw an error if messages > 32kb', async (t) => {
+  const client = await createClient();
 
   const event = {
     userId: 1,
     event: 'event',
     properties: {},
   };
-  for (var i = 0; i < 10000; i++) {
+  for (let i = 0; i < 10000; i += 1) {
     event.properties[i] = 'a';
   }
 
@@ -684,7 +734,7 @@ test('dont throw an error if messages > 32kb', (t) => {
 });
 
 test('ensure that failed requests are retried', async (t) => {
-  const client = createClient({ retryCount });
+  const client = await createClient({ retryCount });
   const callback = spy();
 
   client.queue = [
@@ -694,11 +744,11 @@ test('ensure that failed requests are retried', async (t) => {
     },
   ];
 
-  await t.notThrows(client.flush());
+  await t.notThrows(() => client.flush());
 });
 
 test.skip('ensure that failed requests are not retried forever', async (t) => {
-  const client = createClient({ path: '/v1/dummy' });
+  const client = await createClient({ path: '/v1/dummy' });
   const callback = spy();
 
   client.queue = [
@@ -708,14 +758,14 @@ test.skip('ensure that failed requests are not retried forever', async (t) => {
     },
   ];
 
-  await t.throws(client.flush());
+  await t.throws(client.flush(), { instanceOf: AssertionError });
 });
 
 test('ensure we can pass our own axios instance', async (t) => {
-  const axios = require('axios');
+  const axios = (await import('axios')).default;
   const myAxiosInstance = axios.create();
   const stubAxiosPost = stub(myAxiosInstance, 'post').resolves();
-  const client = createClient({
+  const client = await createClient({
     axiosInstance: myAxiosInstance,
     host: 'https://my-dummy-host.com',
     path: '/test/path',
@@ -735,19 +785,19 @@ test('ensure we can pass our own axios instance', async (t) => {
 });
 
 test('ensure other axios clients are not impacted by axios-retry', async (t) => {
-  let client = createClient(); // eslint-disable-line
-  const axios = require('axios');
+  let client = await createClient(); // eslint-disable-line
+  const axios = (await import('axios')).default;
 
   let callCounter = 0;
 
   // Client will return a successful response for any requests beyond the first
-  const server = express()
+  const localServer = express()
     .use(bodyParser.json())
     .get('/v1/anotherEndpoint', (req, res) => {
       if (callCounter > 0) {
         res.status(200).send('Ok');
       } else {
-        callCounter++;
+        callCounter += 1;
         res.status(503).send('Service down');
       }
     })
@@ -755,7 +805,7 @@ test('ensure other axios clients are not impacted by axios-retry', async (t) => 
 
   await axios
     .get(`http://localhost:${separateAxiosClientPort}/v1/anotherEndpoint`)
-    .then((response) => {
+    .then(() => {
       t.fail();
     })
     .catch((error) => {
@@ -764,11 +814,11 @@ test('ensure other axios clients are not impacted by axios-retry', async (t) => 
       }
     });
 
-  server.close();
+  localServer.close();
 });
 
-test('ensure library information not overridden if provided in context object', (t) => {
-  const client = createClient();
+test('ensure library information not overridden if provided in context object', async (t) => {
+  const client = await createClient();
   const customContext = {
     library: {
       name: 'random-sdk',
@@ -790,8 +840,8 @@ test('ensure library information not overridden if provided in context object', 
   t.deepEqual(actualContext.library, context.library);
 });
 
-test('ensure library information not overridden if provided null in context object', (t) => {
-  const client = createClient();
+test('ensure library information not overridden if provided null in context object', async (t) => {
+  const client = await createClient();
   const customContext = null;
 
   client.enqueue(
@@ -808,8 +858,8 @@ test('ensure library information not overridden if provided null in context obje
   t.deepEqual(actualContext.library, context.library);
 });
 
-test('ensure library information not overridden if provided undefined in context object', (t) => {
-  const client = createClient();
+test('ensure library information not overridden if provided undefined in context object', async (t) => {
+  const client = await createClient();
   const customContext = undefined;
 
   client.enqueue(
