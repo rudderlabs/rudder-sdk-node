@@ -11,7 +11,9 @@ export interface apiObject {
     | boolean
     | undefined
     | apiObject
-    | (string | number | boolean | apiObject)[];
+    | Date
+    | null
+    | (string | number | boolean | apiObject | Date | null | undefined)[];
 }
 
 /**
