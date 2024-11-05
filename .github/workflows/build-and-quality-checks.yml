@@ -37,4 +37,5 @@ jobs:
 
       - name: Generate build
         run: |
-          npm run build
+          npm run build:cjs
+          npm run build:esm
