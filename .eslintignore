@@ -1,10 +1,10 @@
 .husky/
-lib/
 node_modules/
 reports/
-stats/
 *.json
 *.md
 *.d.ts
 .nyc_output
 examples/
+dist/
+coverage/

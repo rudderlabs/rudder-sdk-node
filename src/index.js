@@ -1,3 +1,6 @@
+/* eslint-disable func-names */
+/* eslint-disable sonarjs/no-nested-functions */
+/* eslint-disable sonarjs/code-eval */
 /* eslint-disable no-param-reassign */
 /* eslint-disable no-underscore-dangle */
 /* eslint-disable no-eval */
@@ -7,7 +10,7 @@ const assert = require('assert');
 const removeSlash = require('remove-trailing-slash');
 const serialize = require('serialize-javascript');
 const axios = require('axios');
-const axiosRetry = require('axios-retry');
+const axiosRetry = require('axios-retry').default;
 const ms = require('ms');
 const { v4: uuid } = require('uuid');
 const md5 = require('md5');
@@ -561,6 +564,10 @@ class Analytics {
       return;
     }
 
+    this.setupFlushTimer();
+  }
+
+  setupFlushTimer() {
     if (this.flushInterval && !this.flushTimer) {
       this.logger.debug('no existing flush timer, creating new one');
       this.flushTimer = setTimeout(this.flush.bind(this), this.flushInterval);
@@ -573,7 +580,7 @@ class Analytics {
    * @param {Function} [callback] (optional)
    */
 
-  // eslint-disable-next-line consistent-return
+  // eslint-disable-next-line consistent-return, sonarjs/cognitive-complexity
   async flush(callback) {
     // check if earlier flush was pushed to queue
     this.logger.debug('in flush');
