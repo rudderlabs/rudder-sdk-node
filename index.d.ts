@@ -86,11 +86,6 @@ export type TrackParams = {
   timestamp?: Date;
 } & IdentityOptions;
 
-export type TrackMessage<PropertiesType> = Omit<TrackParams, 'event' | 'properties'> & {
-  event?: string;
-  properties: PropertiesType;
-} & Record<string, any>;
-
 export type GroupParams = {
   groupId: string;
   context?: apiObject;
