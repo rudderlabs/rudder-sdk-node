@@ -1,6 +1,6 @@
 {
   "name": "@rudderstack/rudder-sdk-node",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Rudder Node SDK",
   "main": "./cjs/index.js",
   "module": "./esm/index.js",
@@ -34,7 +34,7 @@
     "check:lint:ci": "eslint src -f json -o reports/eslint.json || exit 0",
     "check:circular": "madge --circular --extensions js src/index.js || exit 0",
     "check:duplicates": "jscpd src --threshold 5",
-    "check:security": "npm audit --recursive --audit-level=high",
+    "check:security": "npm audit --recursive --audit-level=high --omit=dev",
     "format": "prettier --write .",
     "lint:fix": "eslint . --fix",
     "prepare": "husky",
@@ -49,7 +49,7 @@
     "analytics"
   ],
   "dependencies": {
-    "axios": "1.7.7",
+    "axios": "1.7.8",
     "axios-retry": "4.5.0",
     "component-type": "2.0.0",
     "join-component": "1.1.0",
@@ -66,7 +66,7 @@
   },
   "devDependencies": {
     "@babel/eslint-parser": "7.25.9",
-    "@babel/preset-env": "^7.26.0",
+    "@babel/preset-env": "7.26.0",
     "@commitlint/config-conventional": "19.5.0",
     "@digitalroute/cz-conventional-changelog-for-jira": "8.0.1",
     "@size-limit/preset-app": "11.1.6",
@@ -88,7 +88,7 @@
     "eslint-plugin-import": "2.31.0",
     "eslint-plugin-sonarjs": "2.0.4",
     "eslint-plugin-unicorn": "56.0.0",
-    "express": "4.21.1",
+    "express": "4.21.2",
     "husky": "9.1.6",
     "jscpd": "4.0.5",
     "lint-staged": "15.2.10",
@@ -108,7 +108,15 @@
     "git-raw-commits": "3.0.0",
     "semver-regex": "3.1.4",
     "trim-newlines": "3.0.1",
-    "ws": "8.17.1"
+    "ws": "8.17.1",
+    "path-to-regexp": "0.1.12",
+    "cross-spawn": "7.0.6",
+    "postcss": {
+      "nanoid": "3.3.8"
+    },
+    "estimo": {
+      "nanoid": "5.0.9"
+    }
   },
   "resolutions": {
     "dot-prop": "5.3.0",
@@ -116,7 +124,15 @@
     "json5": "2.2.2",
     "semver-regex": "3.1.4",
     "trim-newlines": "3.0.1",
-    "http-cache-semantics": "4.1.1"
+    "http-cache-semantics": "4.1.1",
+    "path-to-regexp": "0.1.12",
+    "cross-spawn": "7.0.6",
+    "postcss": {
+      "nanoid": "3.3.8"
+    },
+    "estimo": {
+      "nanoid": "5.0.9"
+    }
   },
   "optionalDependencies": {
     "bull": "4.16.4"
