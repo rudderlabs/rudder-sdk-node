@@ -53,10 +53,29 @@ jobs:
           echo "DATE=$(date)" >> $GITHUB_ENV
 
       - name: Create pull request into develop
-        uses: repo-sync/pull-request@v2
-        with:
-          source_branch: 'master'
-          destination_branch: 'develop'
-          github_token: ${{ secrets.PAT }}
-          pr_title: 'chore(release): pulling master into develop post release v${{ steps.extract-version.outputs.release_version }}'
-          pr_body: ':crown: *An automated PR*'
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          pr_title="chore(release): merge main into develop after release v${{ steps.extract-version.outputs.release_version }}"
+          
+          # Create PR body with proper formatting
+          cat > pr_body.md << EOF
+          :crown: **Automated Post-Release PR**
+
+          This pull request was created automatically by the GitHub Actions workflow. It merges changes from the \`master\` branch into the \`develop\` branch after a release has been completed.
+
+          This ensures that the \`develop\` branch stays up to date with all release-related changes from the \`master\` branch.
+
+          ### Details
+          - **Release Version**: v${{ steps.extract-version.outputs.release_version }}
+
+          ---
+          Please review and merge it before closing the release ticket. :rocket:
+          EOF
+          
+          # Create the PR using GitHub CLI
+          gh pr create \
+            --base develop \
+            --head master \
+            --title "$pr_title" \
+            --body-file pr_body.md
