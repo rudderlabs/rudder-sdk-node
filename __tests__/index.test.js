@@ -80,7 +80,7 @@ test.before((t) => {
       // res.json(req.body);
       if (batch[0] === 'axios-retry') {
         count += 1;
-        if (count === retryCount) return res.json({});
+        if (count === retryCount) return res.status(200).json({});
         return res.status(503).json({
           error: { message: 'Service Unavailable' },
         });
@@ -92,7 +92,7 @@ test.before((t) => {
         });
       }
 
-      return res.json({});
+      return res.status(200).json({});
     })
     .listen(port, t.end);
 });
