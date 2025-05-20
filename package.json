@@ -88,7 +88,7 @@
     "eslint-plugin-import": "2.31.0",
     "eslint-plugin-sonarjs": "2.0.4",
     "eslint-plugin-unicorn": "56.0.0",
-    "express": "4.21.2",
+    "express": "5.1.0",
     "husky": "9.1.7",
     "jscpd": "4.0.5",
     "lint-staged": "16.0.0",
