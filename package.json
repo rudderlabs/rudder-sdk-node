@@ -71,7 +71,7 @@
     "@digitalroute/cz-conventional-changelog-for-jira": "8.0.1",
     "@size-limit/preset-app": "11.2.0",
     "auto-changelog": "2.5.0",
-    "ava": "6.2.0",
+    "ava": "6.3.0",
     "basic-auth": "2.0.1",
     "body-parser": "2.2.0",
     "commitizen": "4.3.1",
