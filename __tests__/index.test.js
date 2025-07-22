@@ -28,6 +28,12 @@ const port = 4063;
 const separateAxiosClientPort = 4064;
 const retryCount = 2;
 
+let server;
+// Track active timeouts to clear them during cleanup
+let activeTimeouts = [];
+// Track all created clients to clean up their timers
+let createdClients = [];
+
 const createClient = async (options) => {
   const newOptions = { ...options, logLevel: 'error', gzip: false };
   if (!newOptions.host && !newOptions.dataPlaneUrl) {
@@ -40,10 +46,11 @@ const createClient = async (options) => {
   client.flush = pify(client.flush.bind(client));
   client.flushed = true;
 
+  // Track the client for cleanup
+  createdClients.push(client);
+
   return client;
 };
-
-let server;
 
 test.before((t) => {
   let count = 0;
@@ -73,14 +80,17 @@ test.before((t) => {
       }
 
       if (batch[0] === 'timeout') {
-        return globalThis.setTimeout(() => res.end(), 5000);
+        // Store the timeout ID so we can clear it during cleanup
+        const timeoutId = globalThis.setTimeout(() => res.end(), 5000);
+        activeTimeouts.push(timeoutId);
+        return timeoutId;
       }
 
       // console.log("=== response===", JSON.stringify(req.body));
       // res.json(req.body);
       if (batch[0] === 'axios-retry') {
         count += 1;
-        if (count === retryCount) return res.json({});
+        if (count === retryCount) return res.status(200).json({});
         return res.status(503).json({
           error: { message: 'Service Unavailable' },
         });
@@ -92,13 +102,36 @@ test.before((t) => {
         });
       }
 
-      return res.json({});
+      return res.status(200).json({});
     })
     .listen(port, t.end);
 });
 
-test.after(() => {
-  server.close();
+test.after.always(async () => {
+  // Clear any active timeouts before closing the server
+  activeTimeouts.forEach((timeoutId) => {
+    globalThis.clearTimeout(timeoutId);
+  });
+  activeTimeouts = [];
+
+  // Clean up all Analytics clients by clearing their timers
+  createdClients.forEach((client) => {
+    if (client.timer) {
+      clearTimeout(client.timer);
+    }
+    if (client.flushTimer) {
+      clearTimeout(client.flushTimer);
+    }
+  });
+  createdClients = [];
+
+  // Properly close the server and wait for it to finish
+  if (server) {
+    await new Promise((resolve) => {
+      server.close(resolve);
+    });
+  }
+
   Sinon.restore();
 });
 

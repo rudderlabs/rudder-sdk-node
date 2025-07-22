@@ -3,17 +3,25 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/" 
     schedule:
-      interval: "daily"
+      interval: "weekly"
     target-branch: "develop"
   - package-ecosystem: "npm"
     directory: "/" 
     schedule:
-      interval: "daily"
+      interval: "weekly"
+    target-branch: "develop"
     groups:
-      npm-deps:
+      npm-prod-deps:
         patterns:
           - "*"
         update-types:
           - "minor"
           - "patch"
-    target-branch: "develop"
+        dependency-type: "production"
+      npm-dev-deps:
+        patterns:
+          - "*"
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
