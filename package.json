@@ -1,6 +1,6 @@
 {
   "name": "@rudderstack/rudder-sdk-node",
-  "version": "2.1.8",
+  "version": "2.1.9",
   "description": "Rudder Node SDK",
   "main": "./cjs/index.js",
   "module": "./esm/index.js",
