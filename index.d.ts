@@ -1,10 +1,8 @@
-export default Analytics;
-
 /**
  * Represents a generic object in the APIs
  * Use for parameters like context, traits etc.
  */
-export interface apiObject {
+interface apiObject {
   [index: string]:
     | string
     | number
@@ -22,7 +20,7 @@ export interface apiObject {
  * integrationOptions { All: false, "Google Analytics": true, "Braze": true}
  * integrationOptions { All: true, "Chartbeat": false, "Customer.io": false}
  */
-export interface integrationOptions {
+interface integrationOptions {
   // Defaults to true
   // If set to false, specific integration should be set to true to send the event
   All?: boolean;
@@ -35,7 +33,7 @@ export interface integrationOptions {
  * Example usages:
  * constructorOptions { flushAt: 20, "flushInterval": 20000, "enable": true, "maxQueueSize":20000, "logLevel": "info"/"debug"/"error"/"silly"}
  */
-export interface constructorOptions {
+interface constructorOptions {
   flushAt?: number;
   flushInterval?: number;
   enable?: boolean;
@@ -56,21 +54,21 @@ export interface constructorOptions {
 /**
  * Represents the callback in the APIs
  */
-export type apiCallback = () => void;
-export type FlushCallback = (error?: Error, data?: any) => void;
+type apiCallback = () => void;
+type FlushCallback = (error?: Error, data?: any) => void;
 
 type IdentityOptions =
   | { userId: string; anonymousId?: string }
   | { userId?: string; anonymousId: string };
 
-export type IdentifyParams = {
+type IdentifyParams = {
   context?: apiObject;
   traits?: apiObject;
   integrations?: integrationOptions;
   timestamp?: Date;
 } & IdentityOptions;
 
-export type PageParams = {
+type PageParams = {
   name: string;
   context?: apiObject;
   properties?: apiObject;
@@ -78,7 +76,7 @@ export type PageParams = {
   timestamp?: Date;
 } & IdentityOptions;
 
-export type TrackParams = {
+type TrackParams = {
   event: string;
   context?: apiObject;
   properties?: apiObject;
@@ -86,7 +84,7 @@ export type TrackParams = {
   timestamp?: Date;
 } & IdentityOptions;
 
-export type GroupParams = {
+type GroupParams = {
   groupId: string;
   context?: apiObject;
   traits?: apiObject;
@@ -94,7 +92,7 @@ export type GroupParams = {
   timestamp?: Date;
 } & IdentityOptions;
 
-export type ScreenParams = {
+type ScreenParams = {
   name: string;
   context?: apiObject;
   properties?: apiObject;
@@ -102,7 +100,7 @@ export type ScreenParams = {
   timestamp?: Date;
 } & IdentityOptions;
 
-export type AliasParams = {
+type AliasParams = {
   previousId: string;
   context?: apiObject;
   properties?: apiObject;
@@ -286,3 +284,21 @@ declare class Analytics {
    */
   flush(callback?: FlushCallback): Promise<void>;
 }
+
+declare namespace Analytics {
+  export {
+    apiObject,
+    integrationOptions,
+    constructorOptions,
+    apiCallback,
+    FlushCallback,
+    IdentifyParams,
+    PageParams,
+    TrackParams,
+    GroupParams,
+    ScreenParams,
+    AliasParams
+  }
+}
+
+export = Analytics;
