@@ -3,8 +3,13 @@ name: Draft new release
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   draft-new-release:
+    permissions:
+      contents: write  # for Git to git push
     name: Draft a new release
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/heads/develop') || startsWith(github.ref, 'refs/heads/hotfix/')
