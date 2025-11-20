@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [2.1.11](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.1.10...v2.1.11) (2025-11-20)
+
+
+### Bug Fixes
+
+* update index.d.ts for modern TypeScript configuration ([#276](https://github.com/rudderlabs/rudder-sdk-node/issues/276)) ([3343296](https://github.com/rudderlabs/rudder-sdk-node/commit/33432969ccb823b63aab8e48316be8b0c3ddcb1d)), closes [#275](https://github.com/rudderlabs/rudder-sdk-node/issues/275)
+
 ### [2.1.10](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.1.9...v2.1.10) (2025-09-30)
 
 ### [2.1.9](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.1.8...v2.1.9) (2025-09-14)
