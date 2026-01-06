@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.0.0](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.1.11...v3.0.0) (2026-01-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **security:** eliminate RCE vulnerability in persistence queue (#302)
+
+### Bug Fixes
+
+* **security:** eliminate RCE vulnerability in persistence queue ([#302](https://github.com/rudderlabs/rudder-sdk-node/issues/302)) ([e95f6a9](https://github.com/rudderlabs/rudder-sdk-node/commit/e95f6a951b7261c1b149bf3f1adaf3810d35731b)), closes [#RUD-2630](https://github.com/rudderlabs/rudder-sdk-node/issues/RUD-2630)
+
 ### [2.1.11](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.1.10...v2.1.11) (2025-11-20)
 
 

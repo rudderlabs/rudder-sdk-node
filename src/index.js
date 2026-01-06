@@ -1,14 +1,11 @@
 /* eslint-disable func-names */
 /* eslint-disable sonarjs/no-nested-functions */
-/* eslint-disable sonarjs/code-eval */
 /* eslint-disable no-param-reassign */
 /* eslint-disable no-underscore-dangle */
-/* eslint-disable no-eval */
 /* eslint-disable prefer-destructuring */
 
 const assert = require('assert');
 const removeSlash = require('remove-trailing-slash');
-const serialize = require('serialize-javascript');
 const axios = require('axios');
 const axiosRetry = require('axios-retry').default;
 const ms = require('ms');
@@ -25,6 +22,8 @@ const version = require('../package.json').version;
 const gzip = zlib.gzipSync;
 const setImmediate = global.setImmediate || process.nextTick.bind(process);
 const noop = () => {};
+
+const JOB_DATA_VERSION = 3;
 
 class Analytics {
   /**
@@ -77,6 +76,10 @@ class Analytics {
     this.pQueueInitialized = false;
     this.pQueueOpts = undefined;
     this.pJobOpts = {};
+    // Store callbacks in memory by job ID (v3.0.0 - security fix)
+    // NOTE: Callbacks are NOT persisted to Redis. They will be lost on process restart.
+    // This is intentional to prevent serializing functions (RCE vulnerability).
+    this.pCallbacksMap = new Map();
     this.writeKey = writeKey;
     this.host = removeSlash(dataPlaneUrl || host || 'https://hosted.rudderlabs.com');
     this.path = removeSlash(path || '/v1/batch');
@@ -117,6 +120,22 @@ class Analytics {
     }
   }
 
+  _deserializeJobData(job) {
+    try {
+      if (job.data?.version === JOB_DATA_VERSION) {
+        return JSON.parse(job.data.eventData);
+      }
+
+      this.logger.error(
+        'Job data format is not supported. Please drain your Redis queue before upgrading to v3.x.x.',
+      );
+      // <= v2.x jobs are not supported
+    } catch (error) {
+      this.logger.error('Cannot parse the job data.', error);
+    }
+    return undefined;
+  }
+
   addPersistentQueueProcessor() {
     const _isErrorRetryable = this._isErrorRetryable.bind(this);
     const rdone = (callbacks, err) => {
@@ -128,39 +147,67 @@ class Analytics {
     const payloadQueue = this.pQueue;
     const jobOpts = this.pJobOpts;
 
-    this.pQueue.on('failed', function (job, error) {
-      const jobData = eval(`(${job.data.eventData})`);
-      this.logger.error(`job : ${jobData.description} ${error}`);
+    this.pQueue.on('failed', (job, error) => {
+      const jobData = this._deserializeJobData(job);
+      if (jobData) {
+        this.logger.error(`job : ${jobData.description} ${error}`);
+      }
     });
 
     // tapping on queue events
-    this.pQueue.on('completed', function (job, result) {
-      const jobData = eval(`(${job.data.eventData})`);
-      result = result || 'completed';
-      this.logger.debug(`job : ${jobData.description} ${result}`);
+    this.pQueue.on('completed', (job, result) => {
+      const jobData = this._deserializeJobData(job);
+      if (jobData) {
+        result = result || 'completed';
+        this.logger.debug(`job : ${jobData.description} ${result}`);
+      }
     });
 
-    this.pQueue.on('stalled', function (job) {
-      const jobData = eval(`(${job.data.eventData})`);
-      this.logger.warn(`job : ${jobData.description} is stalled...`);
+    this.pQueue.on('stalled', (job) => {
+      const jobData = this._deserializeJobData(job);
+      if (jobData) {
+        this.logger.warn(`job : ${jobData.description} is stalled...`);
+      }
     });
 
     this.pQueue.process((job, done) => {
       // job failed for maxAttempts or more times, push to failed queue
       // starting with attempt = 0
       const maxAttempts = jobOpts.maxAttempts || 10;
-      const jobData = eval(`(${job.data.eventData})`);
-      if (jobData.attempts >= maxAttempts) {
-        done(
-          new Error(
-            `job : ${jobData.description} pushed to failed queue after attempts ${jobData.attempts} skipping further retries...`,
-          ),
+
+      const jobData = this._deserializeJobData(job);
+      if (!jobData) {
+        done(new Error('Skipping the job because the job data could not be parsed.'));
+        return;
+      }
+
+      // Retrieve callbacks from in-memory map
+      // NOTE: Callbacks will be empty if process restarted, as they are stored in-memory only.
+      // This is a security trade-off to prevent serializing functions (RCE vulnerability).
+      // Users will not receive callback notifications for jobs in-flight during restart.
+      const callbacks = this.pCallbacksMap.get(jobData.jobId) || [];
+
+      if (callbacks.length === 0 && jobData.attempts === 0) {
+        this.logger.warn(
+          `No callbacks found for job ${jobData.jobId}. This may indicate the process restarted with jobs in Redis queue.`,
         );
+      }
+
+      if (jobData.attempts >= maxAttempts) {
+        // Clean up callbacks after max attempts exceeded
+        this.pCallbacksMap.delete(jobData.jobId);
+
+        const error = new Error(
+          `job : ${jobData.description} pushed to failed queue after attempts ${jobData.attempts} skipping further retries...`,
+        );
+        rdone(callbacks, error);
+        done(error);
       } else {
         // process the job after exponential delay, if it's the 0th attempt, setTimeout will fire immediately
         // max delay is 30 sec, it is mostly in sync with a bull queue job max lock time
+        const self = this;
         setTimeout(
-          function (axiosInstance, host, path, gzipOption) {
+          (axiosInstance, host, path, gzipOption) => {
             const req = jobData.request;
             req.data.sentAt = new Date();
 
@@ -173,36 +220,43 @@ class Analytics {
               .post(`${host}${path}`, req.data, req)
               // eslint-disable-next-line no-unused-vars
               .then((response) => {
-                rdone(jobData.callbacks);
+                // Clean up callbacks after successful processing
+                self.pCallbacksMap.delete(jobData.jobId);
+                rdone(callbacks);
                 done();
               })
               .catch((err) => {
                 // check if request is retryable
                 const isRetryable = _isErrorRetryable(err);
-                this.logger.debug(`Request is ${isRetryable ? '' : 'not'} to be retried`);
+                self.logger.debug(`Request is ${isRetryable ? '' : 'not'} to be retried`);
                 if (isRetryable) {
-                  const { attempts, description, callbacks } = jobData;
+                  const { attempts, description, jobId } = jobData;
                   jobData.attempts = attempts + 1;
-                  this.logger.debug(`Request retry attempt ${attempts}`);
+                  self.logger.debug(`Request retry attempt ${attempts}`);
                   // increment attempt
                   // add a new job to queue in lifo
+                  // Callbacks remain in map for retry (same jobId)
                   // if able to add, mark the earlier job done with push to completed with a msg
                   // if add to redis queue gives exception, not catching it
                   // in case of redis queue error, mark the job as failed ? i.e add the catch block in below promise ?
                   payloadQueue
-                    .add({ eventData: serialize(jobData) }, { lifo: true })
+                    .add(self._getDataForPersistenceQueue(jobData), { lifo: true })
                     // eslint-disable-next-line no-unused-vars
                     .then((pushedJob) => {
                       done(null, `job : ${description} failed for attempt ${attempts} ${err}`);
                     })
                     .catch((error) => {
-                      this.logger.error(`failed to requeue job ${description}`);
+                      self.logger.error(`failed to requeue job ${description}`);
+                      // Clean up callbacks after requeue failure
+                      self.pCallbacksMap.delete(jobId);
                       rdone(callbacks, error);
                       done(error);
                     });
                 } else {
                   // if not retryable, mark the job failed and to failed queue for user to retry later
-                  rdone(jobData.callbacks, err);
+                  // Clean up callbacks after non-retryable failure
+                  self.pCallbacksMap.delete(jobData.jobId);
+                  rdone(callbacks, err);
                   done(err);
                 }
               });
@@ -311,10 +365,17 @@ class Analytics {
                     .remove()
                     .then(() => {
                       this.logger.debug('success removed active job');
-                      const jobData = eval(`(${job.data.eventData})`);
+                      const jobData = this._deserializeJobData(job);
+
+                      if (!jobData) {
+                        this.logger.error('Cannot parse the job data. Skipping the job.');
+                        return;
+                      }
+
                       jobData.attempts = 0;
+                      // Note: callbacks will be empty for requeued jobs after restart
                       this.pQueue
-                        .add({ eventData: serialize(jobData) }, { lifo: true })
+                        .add(this._getDataForPersistenceQueue(jobData), { lifo: true })
                         // eslint-disable-next-line no-unused-vars
                         .then((removedJob) => {
                           this.logger.debug('success adding removed job back to queue');
@@ -341,6 +402,14 @@ class Analytics {
         this.logger.error('queue not ready');
         callback(error);
       });
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  _getDataForPersistenceQueue(jobData) {
+    return {
+      version: JOB_DATA_VERSION,
+      eventData: JSON.stringify(jobData),
+    };
   }
 
   _validate(message, type) {
@@ -689,15 +758,18 @@ class Analytics {
         ...req,
         data,
       };
+      const jobId = uuid();
       const eventData = {
-        description: `node-${md5(JSON.stringify(request))}-${uuid()}`,
+        jobId,
+        description: `node-${md5(JSON.stringify(request))}-${jobId}`,
         request,
-        callbacks,
         attempts: 0,
       };
-      // using serialize library as default JSON.stringify mangles with function/callback serialization
+      // Store callbacks in memory map (v3.0.0 security fix - no more serialize-javascript)
+      this.pCallbacksMap.set(jobId, callbacks);
+
       this.pQueue
-        .add({ eventData: serialize(eventData) })
+        .add(this._getDataForPersistenceQueue(eventData))
         // eslint-disable-next-line no-unused-vars
         .then((pushedJob) => {
           this.logger.debug('pushed job to queue');
@@ -708,6 +780,8 @@ class Analytics {
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.queue.unshift(items);
           this.state = 'idle';
+          // Clean up callbacks if push to queue failed
+          this.pCallbacksMap.delete(jobId);
           this.logger.error(
             `failed to push to redis queue, in-memory queue size: ${this.queue.length}`,
           );
