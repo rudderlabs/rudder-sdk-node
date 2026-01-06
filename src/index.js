@@ -127,7 +127,7 @@ class Analytics {
       }
 
       this.logger.error(
-        'Job data format is not supported. Please drain your Redis queue before upgrading to v3.0.0.',
+        'Job data format is not supported. Please drain your Redis queue before upgrading to v3.x.x.',
       );
       // <= v2.x jobs are not supported
     } catch (error) {
@@ -189,7 +189,7 @@ class Analytics {
 
       if (callbacks.length === 0 && jobData.attempts === 0) {
         this.logger.warn(
-          `No callbacks found for job ${jobData.jobId}. This may indicate the process restarted with jobs in Redis queue.`
+          `No callbacks found for job ${jobData.jobId}. This may indicate the process restarted with jobs in Redis queue.`,
         );
       }
 
@@ -205,8 +205,9 @@ class Analytics {
       } else {
         // process the job after exponential delay, if it's the 0th attempt, setTimeout will fire immediately
         // max delay is 30 sec, it is mostly in sync with a bull queue job max lock time
+        const self = this;
         setTimeout(
-          function (axiosInstance, host, path, gzipOption) {
+          (axiosInstance, host, path, gzipOption) => {
             const req = jobData.request;
             req.data.sentAt = new Date();
 
@@ -220,18 +221,18 @@ class Analytics {
               // eslint-disable-next-line no-unused-vars
               .then((response) => {
                 // Clean up callbacks after successful processing
-                this.pCallbacksMap.delete(jobData.jobId);
+                self.pCallbacksMap.delete(jobData.jobId);
                 rdone(callbacks);
                 done();
               })
               .catch((err) => {
                 // check if request is retryable
                 const isRetryable = _isErrorRetryable(err);
-                this.logger.debug(`Request is ${isRetryable ? '' : 'not'} to be retried`);
+                self.logger.debug(`Request is ${isRetryable ? '' : 'not'} to be retried`);
                 if (isRetryable) {
                   const { attempts, description, jobId } = jobData;
                   jobData.attempts = attempts + 1;
-                  this.logger.debug(`Request retry attempt ${attempts}`);
+                  self.logger.debug(`Request retry attempt ${attempts}`);
                   // increment attempt
                   // add a new job to queue in lifo
                   // Callbacks remain in map for retry (same jobId)
@@ -239,22 +240,22 @@ class Analytics {
                   // if add to redis queue gives exception, not catching it
                   // in case of redis queue error, mark the job as failed ? i.e add the catch block in below promise ?
                   payloadQueue
-                    .add(this._getDataForPersistenceQueue(jobData), { lifo: true })
+                    .add(self._getDataForPersistenceQueue(jobData), { lifo: true })
                     // eslint-disable-next-line no-unused-vars
                     .then((pushedJob) => {
                       done(null, `job : ${description} failed for attempt ${attempts} ${err}`);
                     })
                     .catch((error) => {
-                      this.logger.error(`failed to requeue job ${description}`);
+                      self.logger.error(`failed to requeue job ${description}`);
                       // Clean up callbacks after requeue failure
-                      this.pCallbacksMap.delete(jobId);
+                      self.pCallbacksMap.delete(jobId);
                       rdone(callbacks, error);
                       done(error);
                     });
                 } else {
                   // if not retryable, mark the job failed and to failed queue for user to retry later
                   // Clean up callbacks after non-retryable failure
-                  this.pCallbacksMap.delete(jobData.jobId);
+                  self.pCallbacksMap.delete(jobData.jobId);
                   rdone(callbacks, err);
                   done(err);
                 }

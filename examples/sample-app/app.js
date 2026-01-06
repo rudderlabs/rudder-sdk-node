@@ -1,4 +1,4 @@
-const Rudderanalytics = require('@rudderstack/rudder-sdk-node'); // use version 2.x.x
+const Rudderanalytics = require('@rudderstack/rudder-sdk-node');
 require('dotenv').config({ path: '../../.env' });
 
 const writeKey = process.env.WRITE_KEY;
@@ -6,9 +6,27 @@ const dataPlaneUrl = process.env.DATAPLANE_URL;
 
 const client = new Rudderanalytics(writeKey, {
   dataPlaneUrl,
-  flushAt: 2,
+  flushAt: 1,
   logLevel: 'debug',
 });
+
+// console.log('Initializing persistence queue...');
+
+// // Enable persistence (this starts the worker that reads from Redis)
+// client.createPersistenceQueue(
+//   {
+//     queueName: 'rudderEventsQueue',
+//     redisOpts: {
+//         host: 'localhost',
+//         port: 6379
+//     }
+//   },
+//   (err) => {
+//     if (err) console.error('Queue Error:', err);
+//     else console.log('Queue is ready and listening...');
+//   }
+// );
+
 /**
  * Sample function to send 3 rudder events[identify,track,track] and make sure events are flowing
  */
@@ -64,6 +82,9 @@ try {
 } catch (e) {
   console.log(e.message);
 }
+
+// Keep process alive to process the job
+setInterval(() => {}, 1000);
 
 exports.Rudderanalytics = Rudderanalytics;
 
