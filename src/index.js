@@ -127,7 +127,7 @@ class Analytics {
       }
 
       this.logger.error(
-        'Job data format is not supported. Please drain your Redis queue before upgrading to v3.0.0.',
+        'Job data format is not supported. Please drain your Redis queue before upgrading to v3.x.x.',
       );
       // <= v2.x jobs are not supported
     } catch (error) {
