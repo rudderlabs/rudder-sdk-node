@@ -37,15 +37,8 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
-      # In order to make a commit, we need to initialize a user.
-      # You may choose to write something less generic here if you want, it doesn't matter functionality wise.
-      - name: Initialize mandatory git config
-        run: |
-          git config user.name "GitHub actions"
-          git config user.email noreply@github.com
-
       # Calculate the next release version based on conventional semantic release
-      - name: Create release branch
+      - name: Calculate release version and create branch
         id: create-release
         env:
           HUSKY: 0
@@ -70,11 +63,13 @@ jobs:
           echo "Release type is $release_type"
           echo "New version is $new_version"
           echo "New release branch name is $branch_name"
-          git checkout -b "$branch_name"
 
-          # Use App Token for branch push (all writes use App Token)
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-          git push --set-upstream origin "$branch_name"
+          # Create release branch via GitHub API (not git push)
+          BASE_SHA=$(git rev-parse HEAD)
+          gh api repos/${{ github.repository }}/git/refs \
+            --method POST \
+            -f ref="refs/heads/$branch_name" \
+            -f sha="$BASE_SHA"
 
           echo "source_branch_name=$source_branch_name" >> $GITHUB_OUTPUT
           echo "branch_name=$branch_name" >> $GITHUB_OUTPUT
@@ -97,6 +92,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.generate-token.outputs.token }}
         with:
+          branch-name: ${{ steps.create-release.outputs.branch_name }}
           files: |
             CHANGELOG.md
             package.json
