@@ -3,11 +3,10 @@ name: Draft new release
 on:
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   draft-new-release:
+    permissions:
+      contents: read # only for checkout, all writes use App Token
     name: Draft a new release
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/heads/develop') || startsWith(github.ref, 'refs/heads/hotfix/')
@@ -49,6 +48,7 @@ jobs:
         id: create-release
         env:
           HUSKY: 0
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
         run: |
           source_branch_name=${GITHUB_REF##*/}
           release_type=release
@@ -70,6 +70,9 @@ jobs:
           echo "New version is $new_version"
           echo "New release branch name is $branch_name"
           git checkout -b "$branch_name"
+
+          # Use App Token for branch push (all writes use App Token)
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
           git push --set-upstream origin "$branch_name"
 
           echo "source_branch_name=$source_branch_name" >> $GITHUB_OUTPUT
