@@ -211,13 +211,18 @@ class Analytics {
             const req = jobData.request;
             req.data.sentAt = new Date();
 
+            // Prepare request payload without mutating original data
+            let requestData = req.data;
+            const requestHeaders = { ...req.headers };
+
             if (gzipOption) {
-              req.data = gzip(JSON.stringify(req.data));
-              req.headers['Content-Encoding'] = 'gzip';
+              requestData = gzip(JSON.stringify(req.data));
+              requestHeaders['Content-Encoding'] = 'gzip';
             }
+
             // if request succeeded, mark the job done and move to completed
             axiosInstance
-              .post(`${host}${path}`, req.data, req)
+              .post(`${host}${path}`, requestData, { ...req, headers: requestHeaders })
               // eslint-disable-next-line no-unused-vars
               .then((response) => {
                 // Clean up callbacks after successful processing

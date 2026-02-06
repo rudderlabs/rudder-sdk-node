@@ -78,7 +78,7 @@ function test() {
 }
 
 try {
-  test();
+  setTimeout(test, 1000);
 } catch (e) {
   console.log(e.message);
 }
