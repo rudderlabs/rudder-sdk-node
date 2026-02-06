@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.0.1](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.0...v3.0.1) (2026-02-06)
+
+
+### Bug Fixes
+
+* repeated gzip on retry with persistence queue ([#320](https://github.com/rudderlabs/rudder-sdk-node/issues/320)) ([230ae3c](https://github.com/rudderlabs/rudder-sdk-node/commit/230ae3c7ad44ec019f2f0e56ae5cfb89f85f6faf))
+
 ## [3.0.0](https://github.com/rudderlabs/rudder-sdk-node/compare/v2.1.11...v3.0.0) (2026-01-06)
 
 
