@@ -78,7 +78,7 @@
     "conventional-github-releaser": "1.1.13",
     "delay": "7.0.0",
     "dotenv": "17.2.4",
-    "eslint": "8.57.0",
+    "eslint": "10.0.0",
     "eslint-config-airbnb": "19.0.4",
     "eslint-config-airbnb-base": "15.0.0",
     "eslint-config-prettier": "10.1.8",
