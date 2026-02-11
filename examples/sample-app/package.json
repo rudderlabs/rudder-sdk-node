@@ -4,12 +4,17 @@
   "description": "",
   "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "install:prod": "npm install --no-save @rudderstack/rudder-sdk-node@latest",
+    "install:local": "cd ../../dist && npm pack && cd ../examples/sample-app && npm install ../../dist/rudderstack-rudder-sdk-node-*.tgz",
+    "start": "node app.js",
+    "test:prod": "npm run install:prod && npm start",
+    "test:local": "npm run install:local && npm start",
+    "clean": "git clean -xdf node_modules"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@rudderstack/rudder-sdk-node": "*",
+    "@rudderstack/rudder-sdk-node": "latest",
     "bull": "4.16.5"
   }
 }

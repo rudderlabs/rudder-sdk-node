@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.0.3](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.2...v3.0.3) (2026-02-11)
+
+
+### Bug Fixes
+
+* add missing tslib dep ([#332](https://github.com/rudderlabs/rudder-sdk-node/issues/332)) ([2b2e70a](https://github.com/rudderlabs/rudder-sdk-node/commit/2b2e70ac1e85c0047f8d6c7ed01cf873352c3db9))
+
 ### [3.0.2](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.1...v3.0.2) (2026-02-10)
 
 ### [3.0.1](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.0...v3.0.1) (2026-02-06)
