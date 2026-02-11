@@ -7,13 +7,10 @@ on:
     types:
       - closed
 
-permissions:
-  contents: read
-
 jobs:
   release:
     permissions:
-      contents: write  # for Git to git push
+      contents: read # only for checkout, all writes use App Token
     name: Publish new release
     runs-on: ubuntu-latest
     if: (startsWith(github.event.pull_request.head.ref, 'release/') || startsWith(github.event.pull_request.head.ref, 'hotfix-release/')) && github.event.pull_request.merged == true # only merged pull requests must trigger this job
@@ -32,10 +29,20 @@ jobs:
 
           echo "release_version=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Generate GitHub App Token
+        id: generate-token
+        uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PRIVATE_KEY }}
+          permission-contents: write # to create tags and releases
+          permission-pull-requests: write # to create backmerge PRs
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
+          token: ${{ steps.generate-token.outputs.token }} # use App Token, don't mix with GITHUB_TOKEN
 
       - name: Setup Node
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
@@ -54,9 +61,12 @@ jobs:
         id: create_release
         env:
           HUSKY: 0
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CONVENTIONAL_GITHUB_RELEASER_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
+          CONVENTIONAL_GITHUB_RELEASER_TOKEN: ${{ steps.generate-token.outputs.token }}
         run: |
+          # Use App Token for tag push (all writes use App Token)
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
           git tag -a v${{ steps.extract-version.outputs.release_version }} -m "chore: release v${{ steps.extract-version.outputs.release_version }}"
           git push origin refs/tags/v${{ steps.extract-version.outputs.release_version }}
           npm run release:github
@@ -64,7 +74,7 @@ jobs:
 
       - name: Create pull request into develop
         env:
-          GH_TOKEN: ${{ secrets.PAT }}
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
         run: |
           pr_title="chore(release): merge main into develop after release v${{ steps.extract-version.outputs.release_version }}"
           
