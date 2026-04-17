@@ -19,16 +19,17 @@ jobs:
     if: (startsWith(github.event.pull_request.head.ref, 'release/') || startsWith(github.event.pull_request.head.ref, 'hotfix-release/')) && github.event.pull_request.merged == true # only merged pull requests must trigger this job
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
         with:
           egress-policy: audit
 
       - name: Extract version from branch name (for release branches)
         id: extract-version
+        env:
+          BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
         run: |
-          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
-          VERSION=${BRANCH_NAME#hotfix-}
-          VERSION=${VERSION#release/}
+          VERSION="${BRANCH_NAME#hotfix-}"
+          VERSION="${VERSION#release/}"
 
           echo "release_version=$VERSION" >> $GITHUB_OUTPUT
 
@@ -38,7 +39,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -56,18 +57,20 @@ jobs:
           HUSKY: 0
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CONVENTIONAL_GITHUB_RELEASER_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ steps.extract-version.outputs.release_version }}
         run: |
-          git tag -a v${{ steps.extract-version.outputs.release_version }} -m "chore: release v${{ steps.extract-version.outputs.release_version }}"
-          git push origin refs/tags/v${{ steps.extract-version.outputs.release_version }}
+          git tag -a "v${RELEASE_VERSION}" -m "chore: release v${RELEASE_VERSION}"
+          git push origin "refs/tags/v${RELEASE_VERSION}"
           npm run release:github
           echo "DATE=$(date)" >> $GITHUB_ENV
 
       - name: Create pull request into develop
         env:
           GH_TOKEN: ${{ secrets.PAT }}
+          RELEASE_VERSION: ${{ steps.extract-version.outputs.release_version }}
         run: |
-          pr_title="chore(release): merge main into develop after release v${{ steps.extract-version.outputs.release_version }}"
-          
+          pr_title="chore(release): merge main into develop after release v${RELEASE_VERSION}"
+
           # Create PR body with proper formatting
           cat > pr_body.md << EOF
           :crown: **Automated Post-Release PR**
@@ -77,12 +80,12 @@ jobs:
           This ensures that the \`develop\` branch stays up to date with all release-related changes from the \`master\` branch.
 
           ### Details
-          - **Release Version**: v${{ steps.extract-version.outputs.release_version }}
+          - **Release Version**: v${RELEASE_VERSION}
 
           ---
           Please review and merge it before closing the release ticket. :rocket:
           EOF
-          
+
           # Create the PR using GitHub CLI
           gh pr create \
             --base develop \
