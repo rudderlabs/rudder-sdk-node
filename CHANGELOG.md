@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.0.4](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.3...v3.0.4) (2026-04-17)
+
+
+### Bug Fixes
+
+* **vuln:** remediate GHA script injection ([#355](https://github.com/rudderlabs/rudder-sdk-node/issues/355)) ([2433058](https://github.com/rudderlabs/rudder-sdk-node/commit/2433058f61a1c01c076cd16dd95c58faaec31d84))
+
 ### [3.0.3](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.2...v3.0.3) (2026-02-11)
 
 
