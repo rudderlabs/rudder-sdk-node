@@ -1,16 +1,41 @@
 version: 2
 updates:
   - package-ecosystem: "github-actions"
-    directory: "/" 
+    directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "cron"
+      # every wednesday at 00:01 UTC
+      cronjob: "1 0 * * 3"
+      timezone: "UTC"
     target-branch: "develop"
-  - package-ecosystem: "npm"
-    directory: "/" 
-    schedule:
-      interval: "weekly"
-    target-branch: "develop"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    open-pull-requests-limit: 10
     groups:
+      github-actions-deps:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    cooldown:
+      default-days: 5
+    directory: "/"
+    schedule:
+      interval: "cron"
+      # every wednesday at 00:01 UTC
+      cronjob: "1 0 * * 3"
+      timezone: "UTC"
+    target-branch: "develop"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 10
+    groups:
+      npm-dev-deps:
+        patterns:
+          - "*"
+        dependency-type: "development"
+
       npm-prod-deps:
         patterns:
           - "*"
@@ -18,10 +43,10 @@ updates:
           - "minor"
           - "patch"
         dependency-type: "production"
-      npm-dev-deps:
+
+      npm-prod-major-deps:
         patterns:
           - "*"
-        dependency-type: "development"
         update-types:
-          - "minor"
-          - "patch"
+          - "major"
+        dependency-type: "production"
