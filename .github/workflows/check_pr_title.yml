@@ -5,10 +5,15 @@ on:
     branches: ['master', 'develop']
     types: ['opened', 'reopened', 'edited', 'synchronize']
 
+permissions:
+  contents: read
+
 jobs:
   check_pr_title:
     name: Check PR title
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
