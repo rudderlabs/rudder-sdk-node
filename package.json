@@ -48,6 +48,9 @@
     "setup": "npm install",
     "test:sample": "npm run package && cd examples/sample-app && npm run test:local"
   },
+  "engines": {
+    "node": ">=16.13.0"
+  },
   "keywords": [
     "analytics"
   ],
