@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.0.6](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.5...v3.0.6) (2026-05-06)
+
+
+### Bug Fixes
+
+* **deps:** bump axios from 1.15.1 to 1.15.2 (security) [Snyk] ([#388](https://github.com/rudderlabs/rudder-sdk-node/issues/388)) ([03785a0](https://github.com/rudderlabs/rudder-sdk-node/commit/03785a0e1478e25af40c14e54dc8b7454312e029))
+
 ### [3.0.5](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.4...v3.0.5) (2026-04-21)
 
 ### [3.0.4](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.3...v3.0.4) (2026-04-17)
