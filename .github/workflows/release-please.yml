@@ -1,0 +1,36 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    name: Create or update release PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # for release-please to create the release & tag
+      pull-requests: write # for release-please to create/update the release PR
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+
+      # Maintains a "Release PR" that aggregates conventional commits since the
+      # last release. Merging that PR bumps the version, updates the changelog,
+      # creates the git tag and the GitHub release.
+      #
+      # The PAT (instead of the default GITHUB_TOKEN) is required so that:
+      #   - PR checks run on the release PR
+      #   - the published release triggers the "Deploy to NPM" workflow
+      - name: Run release-please
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ secrets.PAT }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
