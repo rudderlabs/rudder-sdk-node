@@ -14,7 +14,8 @@ jobs:
   deploy-tag:
     name: Deploy to NPM
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master'
+    # Skip prereleases so they never publish to npm's default `latest` dist-tag.
+    if: (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') && github.event.release.prerelease != true
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
