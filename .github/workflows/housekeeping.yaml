@@ -58,4 +58,4 @@ jobs:
           chmod +x ./scripts/cleanup-old-branches.sh
           ./scripts/cleanup-old-branches.sh \
             --months 2 \
-            --protected-branches "^(master|develop)$"
+            --protected-branches "^master$"
