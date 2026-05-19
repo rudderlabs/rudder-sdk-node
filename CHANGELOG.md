@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.1.0](https://github.com/rudderlabs/rudder-sdk-node/compare/rudder-sdk-node-v3.0.7...rudder-sdk-node-v3.1.0) (2026-05-19)
+
+
+### Features
+
+* add date datatype ([#154](https://github.com/rudderlabs/rudder-sdk-node/issues/154)) ([cf714ae](https://github.com/rudderlabs/rudder-sdk-node/commit/cf714ae40ab1a7978feb8edd79de9236b3115f3f))
+* **cli:** add ability to override host/api url ([11042e1](https://github.com/rudderlabs/rudder-sdk-node/commit/11042e1978b21f89fc45859385b6e7342faad8b1))
+* **cli:** add ability to override host/api url ([ffd1daa](https://github.com/rudderlabs/rudder-sdk-node/commit/ffd1daa5bbf8b804caa7b2ba1f67acd841867663))
+* sdk audit and maintenance ([#81](https://github.com/rudderlabs/rudder-sdk-node/issues/81)) ([23e4079](https://github.com/rudderlabs/rudder-sdk-node/commit/23e4079d7c9f109b0f8d4feaed6f182225854b1b))
+
+
+### Bug Fixes
+
+* add missing tslib dep ([#332](https://github.com/rudderlabs/rudder-sdk-node/issues/332)) ([2b2e70a](https://github.com/rudderlabs/rudder-sdk-node/commit/2b2e70ac1e85c0047f8d6c7ed01cf873352c3db9))
+* bump decode-uri-component from 0.2.0 to 0.2.2 ([#80](https://github.com/rudderlabs/rudder-sdk-node/issues/80)) ([2f27308](https://github.com/rudderlabs/rudder-sdk-node/commit/2f27308edce0243d8224f124d945942d34d06f7b))
+* bump luxon from 3.1.1 to 3.2.1 ([#87](https://github.com/rudderlabs/rudder-sdk-node/issues/87)) ([8e89f38](https://github.com/rudderlabs/rudder-sdk-node/commit/8e89f38d99360788864ff6b9271fc31dd5931f19))
+* concurrent event triggering unnecessary flush call ([#113](https://github.com/rudderlabs/rudder-sdk-node/issues/113)) ([5dd8999](https://github.com/rudderlabs/rudder-sdk-node/commit/5dd89999a7625c999434016dbf3bd6d509d7417a))
+* correct type for flush & bring in loosely-validate-event package ([#118](https://github.com/rudderlabs/rudder-sdk-node/issues/118)) ([e782caf](https://github.com/rudderlabs/rudder-sdk-node/commit/e782caf19a936c3091b9f0059f9683fc3b8af7d6))
+* **deps:** bump axios from 1.15.1 to 1.15.2 (security) [Snyk] ([#388](https://github.com/rudderlabs/rudder-sdk-node/issues/388)) ([03785a0](https://github.com/rudderlabs/rudder-sdk-node/commit/03785a0e1478e25af40c14e54dc8b7454312e029))
+* Enqueue function mututes message object (Issue [#34](https://github.com/rudderlabs/rudder-sdk-node/issues/34)) ([#35](https://github.com/rudderlabs/rudder-sdk-node/issues/35)) ([5601459](https://github.com/rudderlabs/rudder-sdk-node/commit/56014599001a9c3d9d2aa7006bc9edc1fc196b4d))
+* errorhandler type declaration ([#101](https://github.com/rudderlabs/rudder-sdk-node/issues/101)) ([e7ee335](https://github.com/rudderlabs/rudder-sdk-node/commit/e7ee335015fba54de6c7a1c29c2dd7438c79a566))
+* flush after a single event is sent ([#93](https://github.com/rudderlabs/rudder-sdk-node/issues/93)) ([4e7abc4](https://github.com/rudderlabs/rudder-sdk-node/commit/4e7abc45c8cdf962db23b19d8d2fee9a99132eaa))
+* library info override when provided in context ([#89](https://github.com/rudderlabs/rudder-sdk-node/issues/89)) ([3221644](https://github.com/rudderlabs/rudder-sdk-node/commit/32216446ad575dd23b91269aeea9d27ba841e137))
+* log level priority ([#126](https://github.com/rudderlabs/rudder-sdk-node/issues/126)) ([96e1990](https://github.com/rudderlabs/rudder-sdk-node/commit/96e1990447e1c7cfed598aace4de93c8813f015c))
+* package.json & package-lock.json to reduce vulnerabilities ([#166](https://github.com/rudderlabs/rudder-sdk-node/issues/166)) ([3f0434d](https://github.com/rudderlabs/rudder-sdk-node/commit/3f0434dcda79f7b3b334c90804d0c7439a00630a))
+* package.json & package-lock.json to reduce vulnerabilities ([#169](https://github.com/rudderlabs/rudder-sdk-node/issues/169)) ([23d9be9](https://github.com/rudderlabs/rudder-sdk-node/commit/23d9be94b352b9dea885cc74d2c22f67fda24d10))
+* preserve this context in setTimeout callback for persistence queue ([fde6290](https://github.com/rudderlabs/rudder-sdk-node/commit/fde6290ce71d49f02aa33b1b86d253e6570ddab1))
+* remove winston logger dependency to enable serverless environments ([#112](https://github.com/rudderlabs/rudder-sdk-node/issues/112)) ([3619247](https://github.com/rudderlabs/rudder-sdk-node/commit/36192471055fdfc2032223986267715c2b48d4c4))
+* repeated gzip on retry with persistence queue ([#320](https://github.com/rudderlabs/rudder-sdk-node/issues/320)) ([230ae3c](https://github.com/rudderlabs/rudder-sdk-node/commit/230ae3c7ad44ec019f2f0e56ae5cfb89f85f6faf))
+* security vulnerabilities upgrade axios from 0.26.0 to 1.6.0 ([#125](https://github.com/rudderlabs/rudder-sdk-node/issues/125)) ([83c18ff](https://github.com/rudderlabs/rudder-sdk-node/commit/83c18ff0d6c54f40e087e39001e0aa295bfe4e08))
+* type declaration for createPersistenceQueue API ([#72](https://github.com/rudderlabs/rudder-sdk-node/issues/72)) ([5711c6e](https://github.com/rudderlabs/rudder-sdk-node/commit/5711c6e00f4535732bc8f56e172d78e2e3060ea2))
+* update index.d.ts for modern TypeScript configuration ([#276](https://github.com/rudderlabs/rudder-sdk-node/issues/276)) ([3343296](https://github.com/rudderlabs/rudder-sdk-node/commit/33432969ccb823b63aab8e48316be8b0c3ddcb1d))
+* update vulnerable packages ([#135](https://github.com/rudderlabs/rudder-sdk-node/issues/135)) ([9121dbe](https://github.com/rudderlabs/rudder-sdk-node/commit/9121dbed0d463ba02fb7bbba84326bdf03d31efa))
+* upgrade axios to a safe version ([#143](https://github.com/rudderlabs/rudder-sdk-node/issues/143)) ([bba0cd4](https://github.com/rudderlabs/rudder-sdk-node/commit/bba0cd43c9b219fb7205395c364dd5c5242f6e7f))
+* vulnerabilities in dependencies ([#157](https://github.com/rudderlabs/rudder-sdk-node/issues/157)) ([c4e472c](https://github.com/rudderlabs/rudder-sdk-node/commit/c4e472ca195f404f90d7ac3fda5d8911900641be))
+* vulnerabilties in dev and prod dependencies ([#161](https://github.com/rudderlabs/rudder-sdk-node/issues/161)) ([e42f8ac](https://github.com/rudderlabs/rudder-sdk-node/commit/e42f8ac658d0a9ac9f652b957bd613a21238a8c8))
+* vulnerable dependencies ([#239](https://github.com/rudderlabs/rudder-sdk-node/issues/239)) ([51d1ff4](https://github.com/rudderlabs/rudder-sdk-node/commit/51d1ff4b673c05cdc4ac03304065cb22520bf54b))
+* **vuln:** remediate GHA script injection ([#355](https://github.com/rudderlabs/rudder-sdk-node/issues/355)) ([2433058](https://github.com/rudderlabs/rudder-sdk-node/commit/2433058f61a1c01c076cd16dd95c58faaec31d84))
+
 ### [3.0.7](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.6...v3.0.7) (2026-05-13)
 
 ### [3.0.6](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.5...v3.0.6) (2026-05-06)
