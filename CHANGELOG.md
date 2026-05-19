@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.0.8](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.7...v3.0.8) (2026-05-19)
+
+
+### Miscellaneous
+
+* cut patch releases for chore/ci commits ([#415](https://github.com/rudderlabs/rudder-sdk-node/issues/415)) ([687882a](https://github.com/rudderlabs/rudder-sdk-node/commit/687882a59da62084413d1256a686e97ee087f98d))
+* **deps-dev:** bump the npm-dev-deps group with 7 updates ([#413](https://github.com/rudderlabs/rudder-sdk-node/issues/413)) ([fc2a452](https://github.com/rudderlabs/rudder-sdk-node/commit/fc2a452247fb167717c728a1eb33f5c4b8dd235c))
+* **deps:** bump axios from 1.15.2 to 1.16.1 in the npm-prod-deps group ([#414](https://github.com/rudderlabs/rudder-sdk-node/issues/414)) ([ee06467](https://github.com/rudderlabs/rudder-sdk-node/commit/ee06467cdf2258532456167f33574123de1caf1a))
+* **deps:** bump the github-actions-deps group with 2 updates ([#412](https://github.com/rudderlabs/rudder-sdk-node/issues/412)) ([d14bf2c](https://github.com/rudderlabs/rudder-sdk-node/commit/d14bf2cb1ab8c066d603ba529d7c8c694df6d1b9))
+* **deps:** resolve npm audit vulnerabilities in dev dependencies ([#417](https://github.com/rudderlabs/rudder-sdk-node/issues/417)) ([b913ead](https://github.com/rudderlabs/rudder-sdk-node/commit/b913eada57272aba331751f020d2781f3e5fe1e7))
+* make release-please match existing v-prefixed tags ([#411](https://github.com/rudderlabs/rudder-sdk-node/issues/411)) ([e742dee](https://github.com/rudderlabs/rudder-sdk-node/commit/e742dee87bc413533fc34a87ae59fe8c95117105))
+* replace standard-version release flow with release-please ([#409](https://github.com/rudderlabs/rudder-sdk-node/issues/409)) ([1bb91be](https://github.com/rudderlabs/rudder-sdk-node/commit/1bb91beeb4e1d9be9fdbc971630aa9d49245dc6d))
+
 ### [3.0.7](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.6...v3.0.7) (2026-05-13)
 
 ### [3.0.6](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.5...v3.0.6) (2026-05-06)
