@@ -86,7 +86,7 @@
     "eslint-plugin-unicorn": "56.0.0",
     "express": "5.2.1",
     "husky": "9.1.7",
-    "jscpd": "4.1.1",
+    "jscpd": "4.2.0",
     "lint-staged": "17.0.4",
     "madge": "8.0.0",
     "np": "11.2.1",
