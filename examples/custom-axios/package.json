@@ -9,6 +9,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@rudderstack/rudder-sdk-node": "*"
+    "@rudderstack/rudder-sdk-node": "*",
+    "axios": "1.16.1"
+  },
+  "overrides": {
+    "axios": "1.16.1"
   }
 }
