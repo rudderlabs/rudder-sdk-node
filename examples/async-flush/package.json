@@ -10,5 +10,8 @@
   "license": "ISC",
   "dependencies": {
     "@rudderstack/rudder-sdk-node": "*"
+  },
+  "overrides": {
+    "axios": "1.16.1"
   }
 }
