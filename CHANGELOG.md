@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.0.9](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.8...v3.0.9) (2026-05-27)
+
+
+### Bug Fixes
+
+* **examples:** pin axios to 1.16.1 to close Snyk prototype-pollution finding ([#420](https://github.com/rudderlabs/rudder-sdk-node/issues/420)) ([d9e8ddb](https://github.com/rudderlabs/rudder-sdk-node/commit/d9e8ddb4d1c5130c800d676c39fe3314a55e03a3))
+
+
+### Miscellaneous
+
+* **deps-dev:** bump the npm-dev-deps group across 1 directory with 2 updates ([#425](https://github.com/rudderlabs/rudder-sdk-node/issues/425)) ([8421e00](https://github.com/rudderlabs/rudder-sdk-node/commit/8421e001216ebce8220aae0b86fca7f8963e86b9))
+* **deps:** bump the github-actions-deps group across 1 directory with 3 updates ([#424](https://github.com/rudderlabs/rudder-sdk-node/issues/424)) ([70308ba](https://github.com/rudderlabs/rudder-sdk-node/commit/70308bac6bddcb7c0fc497d997c3cc314f9c8870))
+
 ## [3.0.8](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.7...v3.0.8) (2026-05-19)
 
 
