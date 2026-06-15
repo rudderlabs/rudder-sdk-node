@@ -21,7 +21,7 @@ jobs:
           egress-policy: audit
 
       - name: Checkout source branch
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Check PR title
         uses: rudderlabs/github-action-check-pr-title@0a83071336f7d6417249629f67a64530fcecda2e # v1.0.11
