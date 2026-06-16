@@ -1,6 +1,6 @@
 const axios = require('axios');
 const Rudderanalytics = require('@rudderstack/rudder-sdk-node'); // use version 2.x.x
-require('dotenv').config({ path: '../../.env' });
+require('dotenv').config({ path: ['.env', '../../.env'] });
 
 const writeKey = process.env.WRITE_KEY;
 const dataPlaneUrl = process.env.DATAPLANE_URL;

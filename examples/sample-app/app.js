@@ -1,5 +1,5 @@
 const Rudderanalytics = require('@rudderstack/rudder-sdk-node');
-require('dotenv').config({ path: '../../.env' });
+require('dotenv').config({ path: ['.env', '../../.env'] });
 
 const writeKey = process.env.WRITE_KEY;
 const dataPlaneUrl = process.env.DATAPLANE_URL;
