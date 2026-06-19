@@ -15,7 +15,8 @@
   "license": "ISC",
   "dependencies": {
     "@rudderstack/rudder-sdk-node": "latest",
-    "bull": "4.16.5"
+    "bull": "4.16.5",
+    "dotenv": "17.4.2"
   },
   "overrides": {
     "axios": "1.16.1"
