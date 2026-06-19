@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.0.10](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.9...v3.0.10) (2026-06-19)
+
+
+### Bug Fixes
+
+* **examples:** make example projects self-contained and runnable standalone ([#430](https://github.com/rudderlabs/rudder-sdk-node/issues/430)) ([acfedc5](https://github.com/rudderlabs/rudder-sdk-node/commit/acfedc55565732aabdee19684ebbd4641900c180))
+* specify MIT license metadata ([#436](https://github.com/rudderlabs/rudder-sdk-node/issues/436)) ([1182f6f](https://github.com/rudderlabs/rudder-sdk-node/commit/1182f6f2bd1519f828a91985528fb3bb62440436))
+
+
+### Miscellaneous
+
+* **deps-dev:** bump the npm-dev-deps group across 1 directory with 6 updates ([#433](https://github.com/rudderlabs/rudder-sdk-node/issues/433)) ([abc464c](https://github.com/rudderlabs/rudder-sdk-node/commit/abc464cdbefb8be5ee97764cc57cf2b1e171ed71))
+* **deps:** bump axios from 1.16.1 to 1.17.0 in the npm-prod-deps group ([#432](https://github.com/rudderlabs/rudder-sdk-node/issues/432)) ([5d57685](https://github.com/rudderlabs/rudder-sdk-node/commit/5d57685a0987488f6e3cd0b80abb2e3537195b4f))
+* **deps:** bump the github-actions-deps group across 1 directory with 3 updates ([#431](https://github.com/rudderlabs/rudder-sdk-node/issues/431)) ([a007d71](https://github.com/rudderlabs/rudder-sdk-node/commit/a007d71cae18f190266a15537057c989f72bbe70))
+
 ## [3.0.9](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.8...v3.0.9) (2026-05-27)
 
 
