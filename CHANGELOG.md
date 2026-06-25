@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.0.11](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.10...v3.0.11) (2026-06-25)
+
+
+### Miscellaneous
+
+* **deps:** bump axios from 1.17.0 to 1.18.0 in the npm-prod-deps group ([#439](https://github.com/rudderlabs/rudder-sdk-node/issues/439)) ([31450a1](https://github.com/rudderlabs/rudder-sdk-node/commit/31450a189979de39fc33ac13b077f2ec5344bd1f))
+
 ## [3.0.10](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.9...v3.0.10) (2026-06-19)
 
 
