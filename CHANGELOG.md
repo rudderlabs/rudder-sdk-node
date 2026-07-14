@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.0.12](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.11...v3.0.12) (2026-07-14)
+
+
+### Miscellaneous
+
+* **codeowners:** set sdk_team as code owners ([#449](https://github.com/rudderlabs/rudder-sdk-node/issues/449)) ([9cbe7cc](https://github.com/rudderlabs/rudder-sdk-node/commit/9cbe7cc003bb4610261d12f029bc4a37b0b57f3a))
+
 ## [3.0.11](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.10...v3.0.11) (2026-07-09)
 
 
