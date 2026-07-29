@@ -1,52 +1,66 @@
 version: 2
 updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  - package-ecosystem: 'github-actions'
+    directory: '/'
     schedule:
-      interval: "cron"
-      # every wednesday at 00:01 UTC
-      cronjob: "1 0 * * 3"
-      timezone: "UTC"
-    target-branch: "master"
-    labels:
-      - "dependencies"
-      - "github-actions"
-    open-pull-requests-limit: 10
-    groups:
-      github-actions-deps:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "npm"
+      interval: 'cron'
+      cronjob: '1 0 * * 3'
+      timezone: 'UTC'
+    # Applies only if routine version updates are re-enabled; security updates
+    # are intentionally not delayed by Dependabot cooldowns.
     cooldown:
-      default-days: 5
-    directory: "/"
-    schedule:
-      interval: "cron"
-      # every wednesday at 00:01 UTC
-      cronjob: "1 0 * * 3"
-      timezone: "UTC"
-    target-branch: "master"
+      default-days: 7
     labels:
-      - "dependencies"
-    open-pull-requests-limit: 10
+      - 'dependencies'
+      - 'github_actions'
+      - 'security_updates'
+    # Disable routine version updates while retaining security updates.
+    open-pull-requests-limit: 0
     groups:
-      npm-dev-deps:
+      github-actions-security-non-major:
+        applies-to: 'security-updates'
         patterns:
-          - "*"
-        dependency-type: "development"
-
-      npm-prod-deps:
-        patterns:
-          - "*"
+          - '*'
         update-types:
-          - "minor"
-          - "patch"
-        dependency-type: "production"
+          - 'minor'
+          - 'patch'
 
-      npm-prod-major-deps:
+      github-actions-security-major:
+        applies-to: 'security-updates'
         patterns:
-          - "*"
+          - '*'
         update-types:
-          - "major"
-        dependency-type: "production"
+          - 'major'
+
+  - package-ecosystem: 'npm'
+    directories:
+      - '/'
+      - '/examples/*'
+    schedule:
+      interval: 'cron'
+      cronjob: '1 0 * * 3'
+      timezone: 'UTC'
+    # Applies only if routine version updates are re-enabled; security updates
+    # are intentionally not delayed by Dependabot cooldowns.
+    cooldown:
+      default-days: 7
+    labels:
+      - 'dependencies'
+      - 'security_updates'
+    # Disable routine version updates while retaining security updates.
+    open-pull-requests-limit: 0
+    groups:
+      npm-security-non-major:
+        applies-to: 'security-updates'
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+      npm-security-major:
+        applies-to: 'security-updates'
+        patterns:
+          - '*'
+        update-types:
+          - 'major'
