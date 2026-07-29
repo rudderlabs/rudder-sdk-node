@@ -3,19 +3,13 @@ updates:
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
-      interval: 'cron'
-      cronjob: '1 0 * * 3'
-      timezone: 'UTC'
-    # Applies only if routine version updates are re-enabled; security updates
-    # are intentionally not delayed by Dependabot cooldowns.
+      interval: 'quarterly'
     cooldown:
       default-days: 7
     labels:
       - 'dependencies'
       - 'github_actions'
-      - 'security_updates'
-    # Disable routine version updates while retaining security updates.
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 2
     groups:
       github-actions-security-non-major:
         applies-to: 'security-updates'
@@ -32,23 +26,32 @@ updates:
         update-types:
           - 'major'
 
+      github-actions-version-non-major:
+        applies-to: 'version-updates'
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+      github-actions-version-major:
+        applies-to: 'version-updates'
+        patterns:
+          - '*'
+        update-types:
+          - 'major'
+
   - package-ecosystem: 'npm'
     directories:
       - '/'
       - '/examples/*'
     schedule:
-      interval: 'cron'
-      cronjob: '1 0 * * 3'
-      timezone: 'UTC'
-    # Applies only if routine version updates are re-enabled; security updates
-    # are intentionally not delayed by Dependabot cooldowns.
+      interval: 'quarterly'
     cooldown:
       default-days: 7
     labels:
       - 'dependencies'
-      - 'security_updates'
-    # Disable routine version updates while retaining security updates.
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 4
     groups:
       npm-security-non-major:
         applies-to: 'security-updates'
@@ -60,6 +63,40 @@ updates:
 
       npm-security-major:
         applies-to: 'security-updates'
+        patterns:
+          - '*'
+        update-types:
+          - 'major'
+
+      npm-development-non-major:
+        applies-to: 'version-updates'
+        dependency-type: 'development'
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+      npm-development-major:
+        applies-to: 'version-updates'
+        dependency-type: 'development'
+        patterns:
+          - '*'
+        update-types:
+          - 'major'
+
+      npm-production-non-major:
+        applies-to: 'version-updates'
+        dependency-type: 'production'
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+      npm-production-major:
+        applies-to: 'version-updates'
+        dependency-type: 'production'
         patterns:
           - '*'
         update-types:

@@ -1,0 +1,45 @@
+name: Label Dependabot security updates
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  label-security-update:
+    name: Label Dependabot security updates
+    if: github.repository == 'rudderlabs/rudder-sdk-node'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: read
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      # Every security update matches one of the configured group identifiers,
+      # so its Dependabot branch contains "security".
+      - name: Label open security update pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          gh pr list \
+            --repo "$REPOSITORY" \
+            --state open \
+            --author 'app/dependabot' \
+            --limit 100 \
+            --json url,headRefName \
+            --jq '.[] | select(.headRefName | contains("security")) | .url' |
+            while read -r pr_url; do
+              gh pr edit "$pr_url" --add-label security_updates
+            done
