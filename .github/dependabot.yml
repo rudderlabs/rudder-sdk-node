@@ -13,6 +13,7 @@ updates:
     labels:
       - 'dependencies'
       - 'github_actions'
+      - 'security_updates'
     # Disable routine version updates while retaining security updates.
     open-pull-requests-limit: 0
     groups:
@@ -45,6 +46,7 @@ updates:
       default-days: 7
     labels:
       - 'dependencies'
+      - 'security_updates'
     # Disable routine version updates while retaining security updates.
     open-pull-requests-limit: 0
     groups:
