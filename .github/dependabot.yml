@@ -1,52 +1,56 @@
 version: 2
 updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  - package-ecosystem: 'github-actions'
+    directory: '/'
     schedule:
-      interval: "cron"
-      # every wednesday at 00:01 UTC
-      cronjob: "1 0 * * 3"
-      timezone: "UTC"
-    target-branch: "master"
+      interval: 'cron'
+      cronjob: '1 0 * * 3'
+      timezone: 'UTC'
     labels:
-      - "dependencies"
-      - "github-actions"
-    open-pull-requests-limit: 10
+      - 'dependencies'
+      - 'github_actions'
+    # Disable routine version updates while retaining security updates.
+    open-pull-requests-limit: 0
     groups:
-      github-actions-deps:
+      github-actions-security-non-major:
+        applies-to: 'security-updates'
         patterns:
-          - "*"
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
 
-  - package-ecosystem: "npm"
-    cooldown:
-      default-days: 5
-    directory: "/"
+      github-actions-security-major:
+        applies-to: 'security-updates'
+        patterns:
+          - '*'
+        update-types:
+          - 'major'
+
+  - package-ecosystem: 'npm'
+    directories:
+      - '/'
+      - '/examples/*'
     schedule:
-      interval: "cron"
-      # every wednesday at 00:01 UTC
-      cronjob: "1 0 * * 3"
-      timezone: "UTC"
-    target-branch: "master"
+      interval: 'cron'
+      cronjob: '1 0 * * 3'
+      timezone: 'UTC'
     labels:
-      - "dependencies"
-    open-pull-requests-limit: 10
+      - 'dependencies'
+    # Disable routine version updates while retaining security updates.
+    open-pull-requests-limit: 0
     groups:
-      npm-dev-deps:
+      npm-security-non-major:
+        applies-to: 'security-updates'
         patterns:
-          - "*"
-        dependency-type: "development"
-
-      npm-prod-deps:
-        patterns:
-          - "*"
+          - '*'
         update-types:
-          - "minor"
-          - "patch"
-        dependency-type: "production"
+          - 'minor'
+          - 'patch'
 
-      npm-prod-major-deps:
+      npm-security-major:
+        applies-to: 'security-updates'
         patterns:
-          - "*"
+          - '*'
         update-types:
-          - "major"
-        dependency-type: "production"
+          - 'major'
