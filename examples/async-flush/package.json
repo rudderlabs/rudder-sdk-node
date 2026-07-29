@@ -11,8 +11,5 @@
   "dependencies": {
     "@rudderstack/rudder-sdk-node": "*",
     "dotenv": "17.4.2"
-  },
-  "overrides": {
-    "axios": "1.16.1"
   }
 }
