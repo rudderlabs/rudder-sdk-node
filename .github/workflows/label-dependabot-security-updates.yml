@@ -29,6 +29,7 @@ jobs:
       # Every security update matches one of the configured group identifiers,
       # so its Dependabot branch contains "security".
       - name: Label open security update pull requests
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
