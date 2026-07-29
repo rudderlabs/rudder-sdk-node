@@ -4,8 +4,8 @@
   "compilerOptions": {
     "allowJs": true,
     "module": "ESNext",
-    "target": "es5",
-    "moduleResolution": "node",
+    "target": "es2015",
+    "moduleResolution": "bundler",
     "lib": ["es2020"],
     "outDir": "./dist/esm",
     "declarationDir": "./dist/types",

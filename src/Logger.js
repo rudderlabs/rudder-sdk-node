@@ -46,7 +46,6 @@ class Logger {
   /**
    * Formats the console message
    */
-  // eslint-disable-next-line class-methods-use-this
   formatLogData(level, data) {
     if (Array.isArray(data) && data.length > 0) {
       // trim whitespaces for original message

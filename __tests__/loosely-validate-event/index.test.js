@@ -1,5 +1,5 @@
 // eslint-disable-next-line import/no-unresolved
-const test = require('ava');
+const { default: test } = require('ava');
 const { AssertionError } = require('assert');
 const validate = require('../../src/loosely-validate-event');
 
