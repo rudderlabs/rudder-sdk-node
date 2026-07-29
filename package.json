@@ -96,7 +96,7 @@
     "sinon": "22.1.0",
     "size-limit": "12.1.0",
     "standard": "17.1.2",
-    "typescript": "7.0.2"
+    "typescript": "5.9.3"
   },
   "overrides": {
     "external-editor": {
