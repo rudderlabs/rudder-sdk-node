@@ -6,6 +6,10 @@ updates:
       interval: 'cron'
       cronjob: '1 0 * * 3'
       timezone: 'UTC'
+    # Applies only if routine version updates are re-enabled; security updates
+    # are intentionally not delayed by Dependabot cooldowns.
+    cooldown:
+      default-days: 7
     labels:
       - 'dependencies'
       - 'github_actions'
@@ -35,6 +39,10 @@ updates:
       interval: 'cron'
       cronjob: '1 0 * * 3'
       timezone: 'UTC'
+    # Applies only if routine version updates are re-enabled; security updates
+    # are intentionally not delayed by Dependabot cooldowns.
+    cooldown:
+      default-days: 7
     labels:
       - 'dependencies'
     # Disable routine version updates while retaining security updates.
