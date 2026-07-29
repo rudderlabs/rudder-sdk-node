@@ -14,7 +14,6 @@ permissions: {}
 jobs:
   label-security-update:
     name: Label Dependabot security updates
-    if: github.repository == 'rudderlabs/rudder-sdk-node'
     runs-on: ubuntu-latest
     permissions:
       issues: write
