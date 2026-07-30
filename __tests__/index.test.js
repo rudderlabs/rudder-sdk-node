@@ -4,7 +4,7 @@ const express = require('express');
 const auth = require('basic-auth');
 const bodyParser = require('body-parser');
 // eslint-disable-next-line import/no-unresolved
-const test = require('ava');
+const { default: test } = require('ava');
 const Sinon = require('sinon');
 const { setTimeout } = require('node:timers/promises');
 const { AssertionError } = require('assert');

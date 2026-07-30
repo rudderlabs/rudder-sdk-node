@@ -1,9 +1,3 @@
-/* eslint-disable func-names */
-/* eslint-disable sonarjs/no-nested-functions */
-/* eslint-disable no-param-reassign */
-/* eslint-disable no-underscore-dangle */
-/* eslint-disable prefer-destructuring */
-
 const assert = require('assert');
 const removeSlash = require('remove-trailing-slash');
 const axios = require('axios');
@@ -314,7 +308,6 @@ class Analytics {
       return;
     }
 
-    // eslint-disable-next-line import/no-extraneous-dependencies,global-require
     const Queue = require('bull');
 
     this.pQueueOpts = queueOpts || {};
@@ -409,7 +402,6 @@ class Analytics {
       });
   }
 
-  // eslint-disable-next-line class-methods-use-this
   _getDataForPersistenceQueue(jobData) {
     return {
       version: JOB_DATA_VERSION,
@@ -573,7 +565,6 @@ class Analytics {
     callback = callback || noop;
 
     if (!this.enable) {
-      // eslint-disable-next-line consistent-return
       return setImmediate(callback);
     }
 
@@ -654,7 +645,6 @@ class Analytics {
    * @param {Function} [callback] (optional)
    */
 
-  // eslint-disable-next-line consistent-return, sonarjs/cognitive-complexity
   async flush(callback) {
     // check if earlier flush was pushed to queue
     this.logger.debug('in flush');
@@ -817,7 +807,6 @@ class Analytics {
           // Retry invalid write key while during unit test run. Server responds with 404 status for invalid key
           if (isDuringTestExecution) {
             done();
-            // eslint-disable-next-line consistent-return
             return;
           }
 
