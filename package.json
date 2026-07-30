@@ -40,7 +40,8 @@
     "pre-commit": "npm run test && npx lint-staged",
     "commit-msg": "commitlint --edit",
     "commit": "git-cz",
-    "package": "npm run build:cjs && npm run build:esm && npm run copy:assets",
+    "package": "npm run build:cjs && npm run build:esm && npm run copy:assets && npm run check:package",
+    "check:package": "node scripts/check-package.js",
     "clean": "rm -rf dist && git clean -xdf node_modules",
     "setup": "npm install",
     "test:sample": "npm run package && cd examples/sample-app && npm run test:local"

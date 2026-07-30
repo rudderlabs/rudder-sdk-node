@@ -6,6 +6,7 @@
     "module": "ESNext",
     "target": "es2015",
     "moduleResolution": "bundler",
+    "rootDir": "./src",
     "lib": ["es2020"],
     "outDir": "./dist/esm",
     "declarationDir": "./dist/types",
