@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.0.12](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.11...v3.0.12) (2026-07-30)
+
+
+### Bug Fixes
+
+* sdk-5232 restore package entry points ([#460](https://github.com/rudderlabs/rudder-sdk-node/issues/460)) ([e51cf09](https://github.com/rudderlabs/rudder-sdk-node/commit/e51cf0919c2300129c32c1ad6e92d10b8d433823))
+
+
+### Miscellaneous
+
+* **codeowners:** set sdk_team as code owners ([#449](https://github.com/rudderlabs/rudder-sdk-node/issues/449)) ([9cbe7cc](https://github.com/rudderlabs/rudder-sdk-node/commit/9cbe7cc003bb4610261d12f029bc4a37b0b57f3a))
+* **deps-dev:** migrate development toolchain to current majors ([#459](https://github.com/rudderlabs/rudder-sdk-node/issues/459)) ([83f2eec](https://github.com/rudderlabs/rudder-sdk-node/commit/83f2eec8ddfa636a51e2cd4be19cd97f1f6dc41c))
+* **deps-dev:** update development dependencies without typescript 7 ([#456](https://github.com/rudderlabs/rudder-sdk-node/issues/456)) ([458b22d](https://github.com/rudderlabs/rudder-sdk-node/commit/458b22db78767aa8f8383cbee38e086a90764aac))
+* **deps:** bump the github-actions-deps group across 1 directory with 5 updates ([#454](https://github.com/rudderlabs/rudder-sdk-node/issues/454)) ([41fb879](https://github.com/rudderlabs/rudder-sdk-node/commit/41fb8799ef962c0140760cbbed8137cbade3bdad))
+* **deps:** update axios handling in node sdk examples ([#453](https://github.com/rudderlabs/rudder-sdk-node/issues/453)) ([8939028](https://github.com/rudderlabs/rudder-sdk-node/commit/893902815f24c14f83b9832af28e1a3f35d95f99))
+* sdk-5206 configure dependabot security updates ([#457](https://github.com/rudderlabs/rudder-sdk-node/issues/457)) ([179ce93](https://github.com/rudderlabs/rudder-sdk-node/commit/179ce932a7837ad13b9219fff118b151784becf6))
+* sdk-5206 schedule quarterly dependency updates ([#458](https://github.com/rudderlabs/rudder-sdk-node/issues/458)) ([28ca068](https://github.com/rudderlabs/rudder-sdk-node/commit/28ca06830d42cf91bb0ec3e6539fb5440462c332))
+
 ## [3.0.11](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.10...v3.0.11) (2026-07-09)
 
 
