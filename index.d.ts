@@ -69,7 +69,8 @@ type IdentifyParams = {
 } & IdentityOptions;
 
 type PageParams = {
-  name: string;
+  name?: string;
+  category?: string;
   context?: apiObject;
   properties?: apiObject;
   integrations?: integrationOptions;
@@ -232,7 +233,8 @@ declare class Analytics {
    * Send a page `message`.
    *
    * @param {Object} message
-   * @param {String} message.name
+   * @param {String=} message.name (optional)
+   * @param {String=} message.category (optional)
    * @param {String=} message.userId (optional)
    * @param {String=} message.anonymousId (optional)
    * @param {Object=} message.context (optional)
