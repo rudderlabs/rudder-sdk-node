@@ -104,4 +104,8 @@ jobs:
             echo 'Expected the SDK import to require unrestricted environment access.' >&2
             exit 1
           fi
-          grep -q 'Requires env access' "$permission_output"
+          if ! grep -Eiq 'env(ironment)?( variable)? access' "$permission_output"; then
+            echo 'Deno failed for an unexpected reason:' >&2
+            cat "$permission_output" >&2
+            exit 1
+          fi
