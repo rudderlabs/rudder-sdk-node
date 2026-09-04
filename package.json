@@ -29,6 +29,7 @@
     "build:esm": "tsc -p tsconfig.json",
     "test": "AVA_MODE_ON=true nyc --reporter=lcov --reporter=html --reporter=text --reporter=text-summary ava --serial --verbose && npm run test:types",
     "test:ci": "AVA_MODE_ON=true nyc --reporter=lcov --reporter=text --reporter=text-summary --reporter=clover ava --serial --verbose && npm run test:types",
+    "test:deno": "npm run package && node scripts/prepare-deno-test.js && deno test --config .deno-test/deno.json --allow-env --allow-net=127.0.0.1 tests/deno",
     "test:types": "tsc -p tsconfig.types.json",
     "check:lint": "eslint src",
     "check:lint:ci": "eslint src -f json -o reports/eslint.json || exit 0",
@@ -107,6 +108,11 @@
   },
   "optionalDependencies": {
     "bull": "4.16.5"
+  },
+  "ava": {
+    "files": [
+      "__tests__/**/*.test.js"
+    ]
   },
   "lint-staged": {
     "*.js": "eslint --cache --fix",
