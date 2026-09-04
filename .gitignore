@@ -1,4 +1,5 @@
 node_modules
+.deno-test
 coverage
 .nyc_output
 coverage.lcov
