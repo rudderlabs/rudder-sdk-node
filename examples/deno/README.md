@@ -43,10 +43,8 @@ The core example works without that script; no approval is needed to run it.
 - The example does not require `--allow-read`, `--allow-write`, `--allow-run`,
   `--allow-ffi`, or npm lifecycle script approval.
 - Core in-memory delivery has been verified with Deno 2.9.6 and SDK 3.0.12.
-  Automated coverage and the support range are being finalized in
-  [SDK-5398](https://linear.app/rudderstack/issue/SDK-5398).
-- Bull/Redis persistence is outside the current Deno support claim. Its separate
-  assessment is tracked in [SDK-5397](https://linear.app/rudderstack/issue/SDK-5397).
+- Bull/Redis persistence is not fully supported on Deno and is not recommended.
+  Deno can resend timed-out requests, and queue recovery and shutdown have known limitations.
 - `_metadata.nodeVersion` reports the Node.js compatibility version provided by
   Deno. It does not report the Deno version. This example adds `context.runtime`
   to identify Deno explicitly.

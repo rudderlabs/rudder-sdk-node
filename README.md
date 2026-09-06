@@ -56,9 +56,8 @@ SDK version 3.0.12. See the [Deno example](examples/deno/README.md) for a runnab
 npm import, required permissions, and current limitations.
 
 The example requires network access and unrestricted `--allow-env` permission.
-Bull/Redis persistence is outside the current Deno support claim. Automated
-compatibility coverage is being finalized in
-[SDK-5398](https://linear.app/rudderstack/issue/SDK-5398).
+Bull/Redis persistence is not fully supported on Deno and is not recommended.
+Deno can resend timed-out requests, and queue recovery and shutdown have known limitations.
 
 ## SDK Initialization Options
 
