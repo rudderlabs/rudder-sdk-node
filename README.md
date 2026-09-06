@@ -49,6 +49,17 @@ const client = new Analytics(WRITE_KEY, {
 });
 ```
 
+## Using the SDK with Deno
+
+Core in-memory event delivery has been verified with Deno 2.9.6 and the published
+SDK version 3.0.12. See the [Deno example](examples/deno/README.md) for a runnable
+npm import, required permissions, and current limitations.
+
+The example requires network access and unrestricted `--allow-env` permission.
+Bull/Redis persistence is outside the current Deno support claim. Automated
+compatibility coverage is being finalized in
+[SDK-5398](https://linear.app/rudderstack/issue/SDK-5398).
+
 ## SDK Initialization Options
 
 Below parameters are optional and can be passed during SDK initialization.
