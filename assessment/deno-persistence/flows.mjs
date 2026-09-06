@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { gunzipSync } from 'node:zlib';
 import { setTimeout as delay } from 'node:timers/promises';
 import Analytics from '@rudderstack/rudder-sdk-node';
+import { axiosConfig } from './deno-transport.mjs';
 
 // The same assessment runs in Deno and Node against the published package.
 const mode = process.argv[2] || 'flows';
@@ -48,6 +49,7 @@ async function clientFor(name, options = {}) {
     flushAt: 20,
     flushInterval: 60000,
     retryCount: 0,
+    axiosConfig,
     logLevel: 'error',
     ...options,
   });
@@ -178,6 +180,8 @@ try {
     }
   }
 } finally {
+  axiosConfig?.httpAgent.destroy();
+  axiosConfig?.httpsAgent.destroy();
   await new Promise((resolve) => server.close(resolve));
   clearTimeout(deadline);
 }

@@ -6,16 +6,19 @@ suite in [PR #467](https://github.com/rudderlabs/rudder-sdk-node/pull/467).
 
 ## Decision
 
-Basic Bull/Redis persistence runs in the tested Deno environment without native
-build script approval. Keep persistence outside the current public Deno support
-claim. The combined Deno assessment observes a duplicate HTTP request during
-the timeout scenario. Immediate recovery of an active, locked job also fails in
-both runtimes, and the persistence flush API does not provide a delivery
-completion guarantee. Investigate the timeout discrepancy and define recovery
-and shutdown behavior before expanding support.
+The assessment applies a Deno-only transport workaround through the SDK's
+existing `axiosConfig`: HTTP and HTTPS agents use `keepAlive: false`. This
+prevents Deno 2.9.6 from replaying a cancelled request on a reused connection.
+All seven normal persistence scenarios pass with the workaround. Node retains
+its default transport configuration.
 
-This assessment does not change SDK behavior or add persistence to the core
-Deno CI contract. The in-memory example in SDK-5399 can proceed independently.
+Keep persistence outside the current public Deno support claim until active-job
+recovery and shutdown behavior are defined. Immediate recovery of a locked job
+still fails in both runtimes, and persistence `flush()` does not guarantee delivery.
+
+No production SDK code or core CI contract changes. Applications must explicitly
+apply the configuration below to obtain the workaround. The timeout defect also
+affects core in-memory delivery; it is not specific to Bull/Redis.
 
 ## Environment
 
@@ -35,51 +38,75 @@ No real RudderStack events are sent.
 
 ## Results
 
-The normal combined run passed 6 of 7 scenarios in Deno and 7 of 7 in Node.
-The Deno run intentionally retains a failing assertion for the observed timeout
-duplication. The restart checks below run as separate processes.
+With the workaround, the normal combined run passes 7/7 scenarios in both
+Deno and Node. Without it, Deno passes 6/7 and fails the one-request assertion
+in the timeout scenario. The assertion remains unchanged. Separate core HTTP
+and HTTPS regression probes also pass with the workaround and fail without it
+in Deno; both pass in Node. Restart checks run as separate processes.
 
-| Check                                                                  | Deno                                                                                               | Node                                           |
-| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| Load and initialize `createPersistenceQueue()` with real Redis         | Pass                                                                                               | Pass                                           |
-| JSON and gzip delivery, batch path, authentication, event contents     | Pass                                                                                               | Pass                                           |
-| HTTP 503 followed by success                                           | Two requests; event callback succeeds once                                                         | Same                                           |
-| HTTP 400                                                               | Failed job; event callback receives an error once                                                  | Same                                           |
-| HTTP 503 until `maxAttempts: 2`                                        | Two requests; failed job; error callback once                                                      | Same                                           |
-| Request timeout after earlier flows                                    | **Fail:** two HTTP requests with the same message ID; terminal `ECONNABORTED`; error callback once | One HTTP request; terminal error callback once |
-| Request timeout in a fresh process (`SCENARIO=timeout-terminal`)       | One HTTP request; terminal error callback once                                                     | One HTTP request in combined run               |
-| Timer flush after the first automatically flushed event                | Pass                                                                                               | Pass                                           |
-| Paused job survives SDK process exit and is delivered by a new process | Pass                                                                                               | Pass                                           |
-| Paused job survives Redis container restart and SDK restart            | Pass                                                                                               | Not separately tested                          |
-| Immediate restart with an active job lock                              | Initialization fails with `Could not remove job 1`                                                 | Same                                           |
-| Restart after the active lock expires                                  | Persisted event delivered                                                                          | Same                                           |
-| Callback recovery after restart                                        | Callbacks are not persisted                                                                        | Same                                           |
-| `await client.flush()` after first event                               | Resolves before persisted event delivery                                                           | Same                                           |
+| Check                                                                  | Deno                                                                      | Node                                           |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------- |
+| Load and initialize `createPersistenceQueue()` with real Redis         | Pass                                                                      | Pass                                           |
+| JSON and gzip delivery, batch path, authentication, event contents     | Pass                                                                      | Pass                                           |
+| HTTP 503 followed by success                                           | Two requests; event callback succeeds once                                | Same                                           |
+| HTTP 400                                                               | Failed job; event callback receives an error once                         | Same                                           |
+| HTTP 503 until `maxAttempts: 2`                                        | Two requests; failed job; error callback once                             | Same                                           |
+| Request timeout after earlier flows                                    | One request with workaround; two without it; terminal error callback once | One HTTP request; terminal error callback once |
+| Request timeout in a fresh process (`SCENARIO=timeout-terminal`)       | One HTTP request; terminal error callback once                            | One HTTP request in combined run               |
+| Timer flush after the first automatically flushed event                | Pass                                                                      | Pass                                           |
+| Paused job survives SDK process exit and is delivered by a new process | Pass                                                                      | Pass                                           |
+| Paused job survives Redis container restart and SDK restart            | Pass                                                                      | Not separately tested                          |
+| Immediate restart with an active job lock                              | Initialization fails with `Could not remove job 1`                        | Same                                           |
+| Restart after the active lock expires                                  | Persisted event delivered                                                 | Same                                           |
+| Callback recovery after restart                                        | Callbacks are not persisted                                               | Same                                           |
+| `await client.flush()` after first event                               | Resolves before persisted event delivery                                  | Same                                           |
 
 `flows.mjs` asserts request contents, callback counts, and Redis job states.
 The restart modes inspect the stored event before ending the first process.
 The active restart mode deliberately exits while Bull owns the job lock.
 
-### Timeout discrepancy
+### Timeout cause and workaround
 
-The full Deno run repeatedly observed two copies of the timeout event at the
-receiver, with the same `messageId`, despite `retryCount: 0`. The SDK reported
-one terminal `ECONNABORTED` callback. Node observed one request with the same
-script and dependencies. Running only the timeout scenario in a new Deno
-process also observed one request.
+Deno 2.9.6 can resend an explicitly destroyed request on a reused HTTP
+connection. The reproduction was reduced to `node:http` without the SDK,
+Axios, Bull, or Redis. Its retry predicate does not exclude destroyed/aborted
+requests, and the retry path resets the destroyed state. See the
+[Deno source](https://github.com/denoland/deno/blob/v2.9.6/ext/node/polyfills/_http_client.js#L1005).
+A separate Node proxy confirmed that two requests reach an independent process.
 
-A separate Node HTTP proxy also received both copies before forwarding them to
-the Deno receiver. This confirms two HTTP requests reached an independent
-process; the result is not only duplicate request accounting inside the Deno
-receiver.
+The related [fetch retry issue](https://github.com/denoland/deno/issues/35610)
+was fixed in a different code path. It does not resolve this reproduction.
 
-The assessment keeps the one-request assertion and exits nonzero on this
-discrepancy. It continues the remaining scenarios to collect their results.
-The cause is not established; shared HTTP connection state is a candidate
-because preceding flows change the result. A follow-up must reduce the case
-and distinguish Deno's HTTP implementation, Axios, and the SDK queue logic.
-Do not claim timeout delivery parity or general persistence support from the
-successful isolated case.
+The assessment uses `deno-transport.mjs` to disable connection reuse only in
+Deno. A core request that succeeds before a timeout exercises the condition
+that a fresh-connection timeout test misses. `transport-regression.mjs` tests
+that sequence over HTTP and optionally HTTPS, using the same workaround.
+
+Applications can use the existing SDK configuration without modifying the SDK:
+
+```js
+import { Agent as HttpAgent } from 'node:http';
+import { Agent as HttpsAgent } from 'node:https';
+import Analytics from 'npm:@rudderstack/rudder-sdk-node@3.0.12';
+
+const client = new Analytics(writeKey, {
+  dataPlaneUrl,
+  axiosConfig: {
+    httpAgent: new HttpAgent({ keepAlive: false }),
+    httpsAgent: new HttpsAgent({ keepAlive: false }),
+  },
+});
+```
+
+This configuration is intended for Deno. It increases connection setup overhead;
+Node applications do not need it for this defect. If an application supplies its
+own Axios instance or custom agents, it must apply equivalent settings there and
+preserve any existing proxy/TLS configuration. Remove the workaround only after
+a fixed Deno version passes the warm-connection regression.
+
+Set `DENO_KEEP_ALIVE=1` to disable the workaround in the assessment. The
+unmitigated Deno run must fail the one-request assertion. This diagnostic option
+is not an SDK configuration option. The native build-script warning is unrelated.
 
 ### Recovery limitation
 
@@ -181,9 +208,36 @@ To verify the timeout duplication with an independent request counter, start
 `node receiver-proxy.mjs` in another terminal. Then run:
 
 ```sh
-HTTP_PORT=18081 RECEIVER_URL=http://127.0.0.1:18080 \
+DENO_KEEP_ALIVE=1 HTTP_PORT=18081 RECEIVER_URL=http://127.0.0.1:18080 \
   deno run --config deno.json --no-prompt --allow-env --allow-net=127.0.0.1 flows.mjs
 ```
 
 The proxy prints event names and message IDs. The combined Deno run prints the
 timeout event twice with the same ID. Stop the proxy with Ctrl+C after the run.
+
+## Core HTTP and HTTPS regression
+
+The core regression needs no Redis instance:
+
+```sh
+deno run --config deno.json --no-prompt --allow-env --allow-net=127.0.0.1 transport-regression.mjs
+node transport-regression.mjs
+```
+
+For HTTPS, generate a local test certificate and key in a temporary directory:
+
+```sh
+mkdir -p /tmp/sdk-5397-tls
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+  -keyout /tmp/sdk-5397-tls/key.pem -out /tmp/sdk-5397-tls/cert.pem \
+  -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+deno run --config deno.json --no-prompt --allow-env --allow-net=127.0.0.1 \
+  --allow-read=/tmp/sdk-5397-tls transport-regression.mjs \
+  /tmp/sdk-5397-tls/cert.pem /tmp/sdk-5397-tls/key.pem
+node transport-regression.mjs /tmp/sdk-5397-tls/cert.pem /tmp/sdk-5397-tls/key.pem
+```
+
+The HTTPS probe trusts only the supplied test certificate; certificate
+verification remains enabled. The read permission is only for loading the test
+certificate and key. Set `DENO_KEEP_ALIVE=1` before either Deno command to verify
+the unmitigated failure. Do not commit generated private keys.
