@@ -1,4 +1,7 @@
-# Deno persistence assessment
+# Deno persistence compatibility tests
+
+This directory contains manually run compatibility tests and their findings.
+It is not an application example or part of the published SDK.
 
 Assessment for [SDK-5397](https://linear.app/rudderstack/issue/SDK-5397), performed
 on 2026-09-06 against the published npm package, independently of the core test
