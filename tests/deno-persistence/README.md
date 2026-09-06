@@ -3,8 +3,7 @@
 This directory contains manually run compatibility tests and their findings.
 It is not an application example or part of the published SDK.
 
-Assessment for [SDK-5397](https://linear.app/rudderstack/issue/SDK-5397), performed
-on 2026-09-06 against the published npm package, independently of the core test
+Assessment performed on 2026-09-06 against the published npm package, independently of the core test
 suite in [PR #467](https://github.com/rudderlabs/rudder-sdk-node/pull/467).
 
 ## Decision
@@ -15,8 +14,9 @@ prevents Deno 2.9.6 from replaying a cancelled request on a reused connection.
 All seven normal persistence scenarios pass with the workaround. Node retains
 its default transport configuration.
 
-Keep persistence outside the current public Deno support claim until active-job
-recovery and shutdown behavior are defined. Immediate recovery of a locked job
+Bull/Redis persistence is not fully supported on Deno and is not recommended.
+The transport workaround does not resolve queue recovery and shutdown limitations.
+Immediate recovery of a locked job
 still fails in both runtimes, and persistence `flush()` does not guarantee delivery.
 
 No production SDK code or core CI contract changes. Applications must explicitly
