@@ -4,13 +4,21 @@ import { gunzipSync } from 'node:zlib';
 // Run with Node to count HTTP requests independently of Deno's receiver.
 http
   .createServer(async (request, response) => {
-    const chunks = [];
-    for await (const chunk of request) chunks.push(chunk);
-    const bytes = Buffer.concat(chunks);
-    const body = JSON.parse(
-      request.headers['content-encoding'] === 'gzip' ? gunzipSync(bytes) : bytes,
-    );
-    console.log(JSON.stringify(body.batch.map(({ event, messageId }) => ({ event, messageId }))));
+    let bytes;
+    try {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      bytes = Buffer.concat(chunks);
+      const body = JSON.parse(
+        request.headers['content-encoding'] === 'gzip' ? gunzipSync(bytes) : bytes,
+      );
+      console.log(JSON.stringify(body.batch.map(({ event, messageId }) => ({ event, messageId }))));
+    } catch (error) {
+      console.error(`Proxy rejected request body: ${error.message}`);
+      response.writeHead(400);
+      response.end();
+      return;
+    }
     const upstream = http.request(
       {
         hostname: '127.0.0.1',
