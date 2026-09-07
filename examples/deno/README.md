@@ -27,6 +27,9 @@ To restrict network access, replace `--allow-net` with
 `--allow-net=YOUR_DATA_PLANE_HOST`. For a local receiver, include its port:
 `--allow-net=127.0.0.1:8080`.
 
+Use only the hostname and optional port from `DATAPLANE_URL`; omit `https://`
+and any path.
+
 The first run downloads npm dependencies. The local `deno.json` uses Deno's
 global package cache and prevents the repository's Node.js dependencies from
 requiring a local `node_modules` installation.
