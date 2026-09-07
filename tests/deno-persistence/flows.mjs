@@ -25,10 +25,18 @@ const requests = [];
 let status = () => 200;
 let responseDelay = () => 0;
 const server = createServer(async (req, res) => {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const bytes = Buffer.concat(chunks);
-  const body = JSON.parse(req.headers['content-encoding'] === 'gzip' ? gunzipSync(bytes) : bytes);
+  let body;
+  try {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const bytes = Buffer.concat(chunks);
+    body = JSON.parse(req.headers['content-encoding'] === 'gzip' ? gunzipSync(bytes) : bytes);
+  } catch (error) {
+    console.error(`Receiver rejected request body: ${error.message}`);
+    res.writeHead(400);
+    res.end();
+    return;
+  }
   requests.push({ body, headers: req.headers, path: req.url });
   const count = requests.length;
   await delay(responseDelay(count));
