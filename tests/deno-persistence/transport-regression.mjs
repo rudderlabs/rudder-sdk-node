@@ -56,12 +56,12 @@ try {
   assert.deepEqual(requests, ['warmup', 'timeout']);
   console.log(`PASS: ${cert ? 'HTTPS' : 'HTTP'} warm connection then timeout sends one event`);
 } finally {
-  server.closeAllConnections();
-  await new Promise((resolve) => server.close(resolve));
+  server.closeAllConnections?.();
   axiosConfig?.httpAgent.destroy();
   axiosConfig?.httpsAgent.destroy();
   tlsAgent?.destroy();
   http.globalAgent.destroy();
   https.globalAgent.destroy();
+  await new Promise((resolve) => server.close(resolve));
   clearTimeout(deadline);
 }
