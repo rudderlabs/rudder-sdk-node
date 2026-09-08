@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.0.13](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.12...v3.0.13) (2026-09-08)
+
+
+### Bug Fixes
+
+* sdk-2611 correct page event types ([#466](https://github.com/rudderlabs/rudder-sdk-node/issues/466)) ([43b41d2](https://github.com/rudderlabs/rudder-sdk-node/commit/43b41d2dad2c6babefcd69054e55f775f3feb5f5))
+
+
+### Miscellaneous
+
+* add deno compatibility coverage ([#467](https://github.com/rudderlabs/rudder-sdk-node/issues/467)) ([43bcd2d](https://github.com/rudderlabs/rudder-sdk-node/commit/43bcd2dee55d731dfeb63addf15f0e29cfbffd3d))
+* **deps-dev:** bump brace-expansion from 1.1.14 to 1.1.18 ([#461](https://github.com/rudderlabs/rudder-sdk-node/issues/461)) ([91e232f](https://github.com/rudderlabs/rudder-sdk-node/commit/91e232fd87ca97107a4489c3bf72aba44c6f758c))
+* **deps-dev:** bump fast-uri to 3.1.6 ([#465](https://github.com/rudderlabs/rudder-sdk-node/issues/465)) ([0ebee94](https://github.com/rudderlabs/rudder-sdk-node/commit/0ebee946e7bc77d3c16023ce54cfe6f95289bc32))
+* **deps-dev:** bump ip-address to 10.7.0 ([#464](https://github.com/rudderlabs/rudder-sdk-node/issues/464)) ([bc7b4dc](https://github.com/rudderlabs/rudder-sdk-node/commit/bc7b4dc06c77d6474f83d95279917e56428624a3))
+* update readme with new branding images ([#463](https://github.com/rudderlabs/rudder-sdk-node/issues/463)) ([bfe053c](https://github.com/rudderlabs/rudder-sdk-node/commit/bfe053cca1962cf92cf24279e28a50e67ceb191f))
+* verify deno persistence with transport workaround ([#469](https://github.com/rudderlabs/rudder-sdk-node/issues/469)) ([d421f5b](https://github.com/rudderlabs/rudder-sdk-node/commit/d421f5bcc3cdf337388dcefaf218850cb8c593ba))
+
+
+### Documentation
+
+* document deno usage and permissions ([#468](https://github.com/rudderlabs/rudder-sdk-node/issues/468)) ([0b02f7d](https://github.com/rudderlabs/rudder-sdk-node/commit/0b02f7d2b377af82e4c1b6644d37c9cc3624fd94))
+
 ## [3.0.12](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.11...v3.0.12) (2026-07-30)
 
 
