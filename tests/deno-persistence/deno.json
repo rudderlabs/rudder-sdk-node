@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "@rudderstack/rudder-sdk-node": "npm:@rudderstack/rudder-sdk-node@3.0.12"
+  },
+  "nodeModulesDir": "auto"
+}
