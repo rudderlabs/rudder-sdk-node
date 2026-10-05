@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.0.14](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.13...v3.0.14) (2026-10-05)
+
+
+### Bug Fixes
+
+* allow patched axios versions ([79ac30d](https://github.com/rudderlabs/rudder-sdk-node/commit/79ac30d5bbba1be6ae2a48a62a8d73063bf61e18))
+
+
+### Miscellaneous
+
+* move self-hosted CI jobs to the org runner scale set ([#474](https://github.com/rudderlabs/rudder-sdk-node/issues/474)) ([1cf17ef](https://github.com/rudderlabs/rudder-sdk-node/commit/1cf17ef1174aa29dce8acc8fd823c97be078c2f1))
+* switch branding images to CDN URLs ([#471](https://github.com/rudderlabs/rudder-sdk-node/issues/471)) ([9b9a158](https://github.com/rudderlabs/rudder-sdk-node/commit/9b9a158660f43d8cdec4dad339e66bf008702121))
+
 ## [3.0.13](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.12...v3.0.13) (2026-09-08)
 
 
