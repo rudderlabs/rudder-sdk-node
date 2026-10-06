@@ -3,101 +3,40 @@ updates:
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
-      interval: 'quarterly'
-    cooldown:
-      default-days: 7
+      interval: 'monthly'
     labels:
       - 'dependencies'
       - 'github_actions'
-    open-pull-requests-limit: 2
-    groups:
-      github-actions-security-non-major:
-        applies-to: 'security-updates'
-        patterns:
-          - '*'
-        update-types:
-          - 'minor'
-          - 'patch'
-
-      github-actions-security-major:
-        applies-to: 'security-updates'
-        patterns:
-          - '*'
-        update-types:
-          - 'major'
-
-      github-actions-version-non-major:
-        applies-to: 'version-updates'
-        patterns:
-          - '*'
-        update-types:
-          - 'minor'
-          - 'patch'
-
-      github-actions-version-major:
-        applies-to: 'version-updates'
-        patterns:
-          - '*'
-        update-types:
-          - 'major'
+    open-pull-requests-limit: 0
 
   - package-ecosystem: 'npm'
-    directories:
-      - '/'
-      - '/examples/*'
+    directory: '/'
     schedule:
-      interval: 'quarterly'
-    cooldown:
-      default-days: 7
+      interval: 'monthly'
     labels:
       - 'dependencies'
-    open-pull-requests-limit: 4
-    groups:
-      npm-security-non-major:
-        applies-to: 'security-updates'
-        patterns:
-          - '*'
-        update-types:
-          - 'minor'
-          - 'patch'
+    open-pull-requests-limit: 0
 
-      npm-security-major:
-        applies-to: 'security-updates'
-        patterns:
-          - '*'
-        update-types:
-          - 'major'
+  - package-ecosystem: 'npm'
+    directory: '/examples/async-flush'
+    schedule:
+      interval: 'monthly'
+    labels:
+      - 'dependencies'
+    open-pull-requests-limit: 0
 
-      npm-development-non-major:
-        applies-to: 'version-updates'
-        dependency-type: 'development'
-        patterns:
-          - '*'
-        update-types:
-          - 'minor'
-          - 'patch'
+  - package-ecosystem: 'npm'
+    directory: '/examples/custom-axios'
+    schedule:
+      interval: 'monthly'
+    labels:
+      - 'dependencies'
+    open-pull-requests-limit: 0
 
-      npm-development-major:
-        applies-to: 'version-updates'
-        dependency-type: 'development'
-        patterns:
-          - '*'
-        update-types:
-          - 'major'
-
-      npm-production-non-major:
-        applies-to: 'version-updates'
-        dependency-type: 'production'
-        patterns:
-          - '*'
-        update-types:
-          - 'minor'
-          - 'patch'
-
-      npm-production-major:
-        applies-to: 'version-updates'
-        dependency-type: 'production'
-        patterns:
-          - '*'
-        update-types:
-          - 'major'
+  - package-ecosystem: 'npm'
+    directory: '/examples/sample-app'
+    schedule:
+      interval: 'monthly'
+    labels:
+      - 'dependencies'
+    open-pull-requests-limit: 0
