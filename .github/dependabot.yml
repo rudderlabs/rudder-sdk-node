@@ -10,6 +10,21 @@ updates:
       - 'dependencies'
       - 'github_actions'
     open-pull-requests-limit: 0
+    groups:
+      github-actions-version-non-major:
+        applies-to: 'version-updates'
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+      github-actions-version-major:
+        applies-to: 'version-updates'
+        patterns:
+          - '*'
+        update-types:
+          - 'major'
 
   - package-ecosystem: 'npm'
     directory: '/'
@@ -20,6 +35,40 @@ updates:
     labels:
       - 'dependencies'
     open-pull-requests-limit: 0
+    groups:
+      npm-development-non-major:
+        applies-to: 'version-updates'
+        dependency-type: 'development'
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+      npm-development-major:
+        applies-to: 'version-updates'
+        dependency-type: 'development'
+        patterns:
+          - '*'
+        update-types:
+          - 'major'
+
+      npm-production-non-major:
+        applies-to: 'version-updates'
+        dependency-type: 'production'
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+      npm-production-major:
+        applies-to: 'version-updates'
+        dependency-type: 'production'
+        patterns:
+          - '*'
+        update-types:
+          - 'major'
 
   - package-ecosystem: 'npm'
     directory: '/examples/async-flush'
@@ -30,6 +79,40 @@ updates:
     labels:
       - 'dependencies'
     open-pull-requests-limit: 0
+    groups:
+      npm-development-non-major:
+        applies-to: 'version-updates'
+        dependency-type: 'development'
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+      npm-development-major:
+        applies-to: 'version-updates'
+        dependency-type: 'development'
+        patterns:
+          - '*'
+        update-types:
+          - 'major'
+
+      npm-production-non-major:
+        applies-to: 'version-updates'
+        dependency-type: 'production'
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+      npm-production-major:
+        applies-to: 'version-updates'
+        dependency-type: 'production'
+        patterns:
+          - '*'
+        update-types:
+          - 'major'
 
   - package-ecosystem: 'npm'
     directory: '/examples/custom-axios'
@@ -40,6 +123,40 @@ updates:
     labels:
       - 'dependencies'
     open-pull-requests-limit: 0
+    groups:
+      npm-development-non-major:
+        applies-to: 'version-updates'
+        dependency-type: 'development'
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+      npm-development-major:
+        applies-to: 'version-updates'
+        dependency-type: 'development'
+        patterns:
+          - '*'
+        update-types:
+          - 'major'
+
+      npm-production-non-major:
+        applies-to: 'version-updates'
+        dependency-type: 'production'
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+      npm-production-major:
+        applies-to: 'version-updates'
+        dependency-type: 'production'
+        patterns:
+          - '*'
+        update-types:
+          - 'major'
 
   - package-ecosystem: 'npm'
     directory: '/examples/sample-app'
@@ -50,3 +167,37 @@ updates:
     labels:
       - 'dependencies'
     open-pull-requests-limit: 0
+    groups:
+      npm-development-non-major:
+        applies-to: 'version-updates'
+        dependency-type: 'development'
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+      npm-development-major:
+        applies-to: 'version-updates'
+        dependency-type: 'development'
+        patterns:
+          - '*'
+        update-types:
+          - 'major'
+
+      npm-production-non-major:
+        applies-to: 'version-updates'
+        dependency-type: 'production'
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+      npm-production-major:
+        applies-to: 'version-updates'
+        dependency-type: 'production'
+        patterns:
+          - '*'
+        update-types:
+          - 'major'
