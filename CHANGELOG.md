@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.0.15](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.14...v3.0.15) (2026-10-07)
+
+
+### Miscellaneous
+
+* configure security-only dependabot updates ([#482](https://github.com/rudderlabs/rudder-sdk-node/issues/482)) ([ed617ff](https://github.com/rudderlabs/rudder-sdk-node/commit/ed617ff8e527ca8a041a8825fd0b26f2ffe43da1))
+
 ## [3.0.14](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.13...v3.0.14) (2026-10-05)
 
 
