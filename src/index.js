@@ -19,6 +19,35 @@ const noop = () => {};
 
 const JOB_DATA_VERSION = 3;
 
+/**
+ * Removes the write key from an axios error in place so it is safe to log or dump,
+ * keeping its class, message, code and response intact.
+ */
+function redactCredentials(error) {
+  if (!error || typeof error !== 'object') {
+    return error;
+  }
+  [error, error.response].forEach((source) => {
+    if (!source || typeof source !== 'object') {
+      return;
+    }
+    const { config } = source;
+    if (config && typeof config === 'object') {
+      delete config.auth;
+      if (config.headers && typeof config.headers === 'object') {
+        Object.keys(config.headers)
+          .filter((name) => name.toLowerCase() === 'authorization')
+          .forEach((name) => delete config.headers[name]);
+      }
+    }
+    // The raw request holds the Authorization header; keep it reachable but out of dumps and JSON.
+    if (Object.getOwnPropertyDescriptor(source, 'request')?.configurable) {
+      Object.defineProperty(source, 'request', { enumerable: false });
+    }
+  });
+  return error;
+}
+
 class Analytics {
   /**
    * Initialize a new `Analytics` with your RudderStack source's `writeKey` and an
@@ -227,6 +256,7 @@ class Analytics {
               .catch((err) => {
                 // check if request is retryable
                 const isRetryable = _isErrorRetryable(err);
+                redactCredentials(err);
                 self.logger.debug(`Request is ${isRetryable ? '' : 'not'} to be retried`);
                 if (isRetryable) {
                   const { attempts, description, jobId } = jobData;
@@ -646,7 +676,15 @@ class Analytics {
    * @param {Function} [callback] (optional)
    */
 
-  async flush(callback) {
+  flush(callback) {
+    const result = this._flush(callback);
+    // Internal and callback-style calls never handle this promise. Failures already reach
+    // callbacks, errorHandler and the logger, so they must not crash the host as unhandled rejections.
+    result.catch(noop);
+    return result;
+  }
+
+  async _flush(callback) {
     // check if earlier flush was pushed to queue
     this.logger.debug('in flush');
     this.state = 'running';
@@ -673,10 +711,16 @@ class Analytics {
       if (this.pendingFlush) {
         this.logger.debug('queue is empty, but a flush already exists');
         // We attach the callback to the end of the chain to support a caller calling `flush()` multiple times when the queue is empty.
-        this.pendingFlush = this.pendingFlush.then(() => {
-          callback();
-          return Promise.resolve();
-        });
+        this.pendingFlush = this.pendingFlush.then(
+          () => {
+            callback();
+            return Promise.resolve();
+          },
+          (err) => {
+            callback(err);
+            throw err;
+          },
+        );
         return this.pendingFlush;
       }
 
@@ -691,6 +735,7 @@ class Analytics {
       }
     } catch (err) {
       this.pendingFlush = null;
+      callback(err);
       throw err;
     }
 
@@ -772,16 +817,17 @@ class Analytics {
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = 'idle';
         })
-        .catch((error) => {
+        .catch(() => {
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
-          this.queue.unshift(items);
+          this.queue.unshift(...items);
           this.state = 'idle';
           // Clean up callbacks if push to queue failed
           this.pCallbacksMap.delete(jobId);
+          // Not rethrown: nothing awaits this chain, so a throw would crash the host process.
+          // The error is not logged as it can carry the job payload, including the write key.
           this.logger.error(
             `failed to push to redis queue, in-memory queue size: ${this.queue.length}`,
           );
-          throw error;
         });
     } else if (!this.pQueue) {
       this.pendingFlush = this.axiosInstance
@@ -791,6 +837,7 @@ class Analytics {
           return Promise.resolve(data);
         })
         .catch((err) => {
+          redactCredentials(err);
           this.logger.error(`Error: ${err.response ? err.response.statusText : err.code}`);
           const isDuringTestExecution =
             err &&

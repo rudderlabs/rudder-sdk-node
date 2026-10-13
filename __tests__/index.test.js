@@ -1,13 +1,13 @@
-/* eslint-disable no-underscore-dangle */
+/* eslint-disable unicorn/filename-case */
 // import bodyParser from 'body-parser';
 const express = require('express');
 const auth = require('basic-auth');
 const bodyParser = require('body-parser');
-// eslint-disable-next-line import/no-unresolved
 const { default: test } = require('ava');
 const Sinon = require('sinon');
 const { setTimeout } = require('node:timers/promises');
 const { AssertionError } = require('assert');
+const { inspect } = require('node:util');
 
 const Analytics = require('../src/index');
 const { version } = require('../package.json');
@@ -254,7 +254,7 @@ test('enqueue - stringify ids handles strings', async (t) => {
       anonymousId: '15796345',
       // We're explicitly testing the behaviour of the library if a customer
       // uses a String constructor.
-      userId: String('prateek'), // eslint-disable-line no-new-wrappers
+      userId: String('prateek'),
       name: 'screen name',
     },
     noop,
@@ -460,6 +460,98 @@ test('flush - evoke callback when errorHandler option is specified', async (t) =
   await t.notThrows(() => client.flush());
   await setTimeout(5);
   t.true(callback.calledOnce);
+});
+
+const unreachableWriteKey = 'unreachable-sentinel-write-key';
+const createUnreachableClient = (options) => {
+  const client = new Analytics(unreachableWriteKey, {
+    dataPlaneUrl: 'http://127.0.0.1:1',
+    flushInterval: 60_000,
+    logLevel: 'none',
+    retryCount: 0,
+    ...options,
+  });
+  createdClients.push(client);
+  return client;
+};
+const recordUnhandledRejections = () => {
+  const rejections = [];
+  const listener = (reason) => rejections.push(reason);
+  process.on('unhandledRejection', listener);
+  return { rejections, stop: () => process.removeListener('unhandledRejection', listener) };
+};
+
+test('flush - redact the write key from transport errors without changing their shape', async (t) => {
+  const errorHandler = spy();
+  const client = createUnreachableClient({ errorHandler });
+  client.flushed = true;
+  const eventCallback = spy();
+  client.track({ event: 'unreachable', userId: 'user-1' }, eventCallback);
+
+  await client.flush();
+  await setTimeout(5);
+
+  const error = errorHandler.firstCall.firstArg;
+  t.is(eventCallback.firstCall.firstArg, error);
+  t.true(error.isAxiosError);
+  t.is(error.code, 'ECONNREFUSED');
+  t.truthy(error.request);
+  t.is(error.config.auth, undefined);
+
+  const basicAuth = Buffer.from(`${unreachableWriteKey}:`).toString('base64');
+  for (const output of [inspect(error, { depth: Infinity }), JSON.stringify(error)]) {
+    t.false(output.includes(unreachableWriteKey));
+    t.false(output.includes(basicAuth));
+  }
+});
+
+test('flush - failures of unawaited flushes do not cause unhandled rejections', async (t) => {
+  const unhandled = recordUnhandledRejections();
+  try {
+    const client = createUnreachableClient();
+    const eventCallback = spy();
+    // The first event triggers an internal flush that nothing awaits.
+    client.track({ event: 'unreachable', userId: 'user-1' }, eventCallback);
+
+    const flushError = await new Promise((resolve) => {
+      client.flush(resolve);
+    });
+    await setTimeout(20);
+
+    t.is(flushError.code, 'ECONNREFUSED');
+    t.is(eventCallback.firstCall.firstArg.code, 'ECONNREFUSED');
+    t.deepEqual(unhandled.rejections, []);
+  } finally {
+    unhandled.stop();
+  }
+});
+
+test('flush - awaited flush still rejects without an errorHandler', async (t) => {
+  const client = createUnreachableClient();
+  client.flushed = true;
+  client.track({ event: 'unreachable', userId: 'user-1' });
+
+  await t.throwsAsync(client.flush(), { code: 'ECONNREFUSED' });
+});
+
+test('flush - persistent queue push failure requeues events without an unhandled rejection', async (t) => {
+  const unhandled = recordUnhandledRejections();
+  try {
+    const client = createUnreachableClient();
+    client.flushed = true;
+    client.pQueue = { add: () => Promise.reject(new Error('redis down')) };
+    client.pQueueInitialized = true;
+    const item = { message: 'a', callback: noop };
+    client.queue = [item];
+
+    await client.flush();
+    await setTimeout(20);
+
+    t.deepEqual(client.queue, [item]);
+    t.deepEqual(unhandled.rejections, []);
+  } finally {
+    unhandled.stop();
+  }
 });
 
 test.skip('flush - time out if configured', async (t) => {

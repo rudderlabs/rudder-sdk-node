@@ -229,3 +229,24 @@ Deno.test('the flush timer delivers queued events', async () => {
     await receiver.close();
   }
 });
+
+Deno.test('connection failures reach callbacks without exposing the write key', async () => {
+  const client = new Analytics(WRITE_KEY, {
+    dataPlaneUrl: 'http://127.0.0.1:1',
+    logLevel: 'none',
+    retryCount: 0,
+  });
+
+  // The first event triggers an unawaited flush; its failure must not be an unhandled rejection.
+  const results = await Promise.all([
+    callbackResult((done) => client.track({ event: 'Connection failure', userId: 'user-1' }, done)),
+    callbackResult((done) => client.flush(done)),
+  ]);
+
+  for (const { error } of results) {
+    assert.equal(error.code, 'ECONNREFUSED');
+    const dump = `${Deno.inspect(error, { depth: Infinity })}${JSON.stringify(error)}`;
+    assert.equal(dump.includes(WRITE_KEY), false);
+    assert.equal(dump.includes(btoa(`${WRITE_KEY}:`)), false);
+  }
+});
