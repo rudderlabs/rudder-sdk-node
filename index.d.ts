@@ -29,17 +29,6 @@ interface integrationOptions {
 }
 
 /**
- * Credential-safe upload failure shape delivered to callbacks and errorHandler.
- */
-interface SanitizedTransportError extends Error {
-  code?: string;
-  response?: {
-    status?: number;
-    statusText?: string;
-  };
-}
-
-/**
  * Represents the constructor options object
  * Example usages:
  * constructorOptions { flushAt: 20, "flushInterval": 20000, "enable": true, "maxQueueSize":20000, "logLevel": "info"/"debug"/"error"/"silly"}
@@ -58,16 +47,15 @@ interface constructorOptions {
   axiosInstance?: any;
   axiosRetryConfig?: any;
   retryCount?: number;
-  /** Receives a credential-safe transport error after an upload failure. */
-  errorHandler?: (error: SanitizedTransportError) => void | Promise<void>;
+  errorHandler?: (error?: any) => void;
   gzip?: boolean;
 }
 
 /**
  * Represents the callback in the APIs
  */
-type apiCallback = (error?: SanitizedTransportError, data?: any) => void;
-type FlushCallback = (error?: SanitizedTransportError, data?: any) => void;
+type apiCallback = () => void;
+type FlushCallback = (error?: Error, data?: any) => void;
 
 type IdentityOptions =
   { userId: string; anonymousId?: string } | { userId?: string; anonymousId: string };
@@ -292,19 +280,16 @@ declare class Analytics {
   /**
    * Flush the current queue
    *
-   * Upload failures are reported through callbacks and resolve without rejecting.
-   *
    * @param {Function} [callback] (optional)
-   * @return The uploaded batch on success, or undefined when no batch was uploaded.
+   * @return
    */
-  flush(callback?: FlushCallback): Promise<apiObject | undefined>;
+  flush(callback?: FlushCallback): Promise<void>;
 }
 
 declare namespace Analytics {
   export {
     apiObject,
     integrationOptions,
-    SanitizedTransportError,
     constructorOptions,
     apiCallback,
     FlushCallback,

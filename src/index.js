@@ -3,7 +3,7 @@ const removeSlash = require('remove-trailing-slash');
 const axios = require('axios');
 const axiosRetry = require('axios-retry').default;
 const ms = require('ms');
-const { createHmac, randomUUID: uuid } = require('crypto');
+const { randomUUID: uuid } = require('crypto');
 const md5 = require('md5');
 const isString = require('lodash.isstring');
 const cloneDeep = require('lodash.clonedeep');
@@ -17,81 +17,35 @@ const gzip = zlib.gzipSync;
 const setImmediate = global.setImmediate || process.nextTick.bind(process);
 const noop = () => {};
 
-const JOB_DATA_VERSION = 4;
-const LEGACY_JOB_DATA_VERSION = 3;
+const JOB_DATA_VERSION = 3;
 
-function getWriteKeyBinding(writeKey) {
-  return createHmac('sha256', writeKey).update('rudder-sdk-node-persistent-job').digest('hex');
-}
-
-function getJobDataSignature(writeKey, eventData) {
-  return createHmac('sha256', writeKey).update(eventData).digest('hex');
-}
-
-function sanitizeJobData(jobData) {
-  if (!jobData || typeof jobData !== 'object') {
-    return undefined;
+/**
+ * Removes the write key from an axios error in place so it is safe to log or dump,
+ * keeping its class, message, code and response intact.
+ */
+function redactCredentials(error) {
+  if (!error || typeof error !== 'object') {
+    return error;
   }
-
-  const headers = { ...jobData.request?.headers };
-  for (const header of Object.keys(headers)) {
-    if (header.toLowerCase() === 'authorization') {
-      delete headers[header];
+  [error, error.response].forEach((source) => {
+    if (!source || typeof source !== 'object') {
+      return;
     }
-  }
-
-  const sanitized = {
-    ...jobData,
-    request: jobData.request
-      ? {
-          headers,
-          ...(jobData.request.timeout ? { timeout: jobData.request.timeout } : {}),
-          data: jobData.request.data,
-        }
-      : jobData.request,
-  };
-
-  if (sanitized.callbacks !== undefined) {
-    delete sanitized.callbacks;
-  }
-
-  return sanitized;
-}
-
-function sanitizeTransportError(error, writeKey) {
-  const source = error && typeof error === 'object' ? error : {};
-  const response = source.response && typeof source.response === 'object' ? source.response : {};
-  const secrets = writeKey
-    ? [writeKey, `Basic ${Buffer.from(`${writeKey}:`).toString('base64')}`]
-    : [];
-
-  const redact = (value) => {
-    let output = String(value || 'Request failed');
-    secrets.forEach((secret) => {
-      output = output.split(secret).join('[REDACTED]');
-    });
-    return output;
-  };
-
-  const sanitized = new Error(redact(source.message));
-  const safeName = redact(source.name || 'Error');
-  sanitized.name = safeName === source.name ? safeName : 'Error';
-
-  if (source.code !== undefined) {
-    sanitized.code = redact(source.code);
-  }
-
-  if (response.status !== undefined || response.statusText !== undefined) {
-    sanitized.response = {};
-    if (response.status !== undefined) {
-      sanitized.response.status = response.status;
+    const { config } = source;
+    if (config && typeof config === 'object') {
+      delete config.auth;
+      if (config.headers && typeof config.headers === 'object') {
+        Object.keys(config.headers)
+          .filter((name) => name.toLowerCase() === 'authorization')
+          .forEach((name) => delete config.headers[name]);
+      }
     }
-    if (response.statusText !== undefined) {
-      sanitized.response.statusText = redact(response.statusText);
+    // The raw request holds the Authorization header; keep it reachable but out of dumps and JSON.
+    if (Object.getOwnPropertyDescriptor(source, 'request')?.configurable) {
+      Object.defineProperty(source, 'request', { enumerable: false });
     }
-  }
-
-  return sanitized;
+  });
+  return error;
 }
 
 class Analytics {
@@ -164,7 +118,6 @@ class Analytics {
     this.flushed = false;
     this.errorHandler = errorHandler;
     this.pendingFlush = null;
-    this.pendingFlushResult = null;
     this.logLevel = logLevel || 'info';
     this.gzip = true;
     if (loadOptions.gzip === false) {
@@ -193,26 +146,7 @@ class Analytics {
   _deserializeJobData(job) {
     try {
       if (job.data?.version === JOB_DATA_VERSION) {
-        const expectedSignature = getJobDataSignature(this.writeKey, job.data.eventData);
-        if (
-          job.data.writeKeyBinding !== getWriteKeyBinding(this.writeKey) ||
-          job.data.eventDataSignature !== expectedSignature
-        ) {
-          this.logger.error('Skipping persistent queue job for a different write key.');
-          return undefined;
-        }
-        return sanitizeJobData(JSON.parse(job.data.eventData));
-      }
-
-      if (job.data?.version === LEGACY_JOB_DATA_VERSION) {
-        const legacyJobData = JSON.parse(job.data.eventData);
-        if (legacyJobData.request?.auth?.username !== this.writeKey) {
-          this.logger.error(
-            'Skipping legacy persistent queue job without matching write-key auth.',
-          );
-          return undefined;
-        }
-        return sanitizeJobData(legacyJobData);
+        return JSON.parse(job.data.eventData);
       }
 
       this.logger.error(
@@ -239,8 +173,7 @@ class Analytics {
     this.pQueue.on('failed', (job, error) => {
       const jobData = this._deserializeJobData(job);
       if (jobData) {
-        const sanitizedError = sanitizeTransportError(error, this.writeKey);
-        this.logger.error(`job : ${jobData.description} ${sanitizedError.message}`);
+        this.logger.error(`job : ${jobData.description} ${error}`);
       }
     });
 
@@ -312,11 +245,7 @@ class Analytics {
 
             // if request succeeded, mark the job done and move to completed
             axiosInstance
-              .post(`${host}${path}`, requestData, {
-                auth: { username: self.writeKey },
-                headers: requestHeaders,
-                ...(req.timeout ? { timeout: req.timeout } : {}),
-              })
+              .post(`${host}${path}`, requestData, { ...req, headers: requestHeaders })
               // eslint-disable-next-line no-unused-vars
               .then((response) => {
                 // Clean up callbacks after successful processing
@@ -325,9 +254,9 @@ class Analytics {
                 done();
               })
               .catch((err) => {
-                // Keep the original error for retry classification, but only expose a safe copy.
+                // check if request is retryable
                 const isRetryable = _isErrorRetryable(err);
-                const sanitizedError = sanitizeTransportError(err, self.writeKey);
+                redactCredentials(err);
                 self.logger.debug(`Request is ${isRetryable ? '' : 'not'} to be retried`);
                 if (isRetryable) {
                   const { attempts, description, jobId } = jobData;
@@ -343,25 +272,21 @@ class Analytics {
                     .add(self._getDataForPersistenceQueue(jobData), { lifo: true })
                     // eslint-disable-next-line no-unused-vars
                     .then((pushedJob) => {
-                      done(
-                        null,
-                        `job : ${description} failed for attempt ${attempts} ${sanitizedError.message}`,
-                      );
+                      done(null, `job : ${description} failed for attempt ${attempts} ${err}`);
                     })
                     .catch((error) => {
-                      const safeQueueError = sanitizeTransportError(error, self.writeKey);
                       self.logger.error(`failed to requeue job ${description}`);
                       // Clean up callbacks after requeue failure
                       self.pCallbacksMap.delete(jobId);
-                      rdone(callbacks, safeQueueError);
-                      done(safeQueueError);
+                      rdone(callbacks, error);
+                      done(error);
                     });
                 } else {
                   // if not retryable, mark the job failed and to failed queue for user to retry later
                   // Clean up callbacks after non-retryable failure
                   self.pCallbacksMap.delete(jobData.jobId);
-                  rdone(callbacks, sanitizedError);
-                  done(sanitizedError);
+                  rdone(callbacks, err);
+                  done(err);
                 }
               });
           },
@@ -508,13 +433,9 @@ class Analytics {
   }
 
   _getDataForPersistenceQueue(jobData) {
-    const sanitizedJobData = sanitizeJobData(jobData);
-    const eventData = JSON.stringify(sanitizedJobData);
     return {
       version: JOB_DATA_VERSION,
-      writeKeyBinding: getWriteKeyBinding(this.writeKey),
-      eventDataSignature: getJobDataSignature(this.writeKey, eventData),
-      eventData,
+      eventData: JSON.stringify(jobData),
     };
   }
 
@@ -755,7 +676,15 @@ class Analytics {
    * @param {Function} [callback] (optional)
    */
 
-  async flush(callback) {
+  flush(callback) {
+    const result = this._flush(callback);
+    // Internal and callback-style calls never handle this promise. Failures already reach
+    // callbacks, errorHandler and the logger, so they must not crash the host as unhandled rejections.
+    result.catch(noop);
+    return result;
+  }
+
+  async _flush(callback) {
     // check if earlier flush was pushed to queue
     this.logger.debug('in flush');
     this.state = 'running';
@@ -781,11 +710,18 @@ class Analytics {
     if (this.queue.length === 0) {
       if (this.pendingFlush) {
         this.logger.debug('queue is empty, but a flush already exists');
-        // Attach the callback without replacing pendingFlush, which is cleared by the request itself.
-        return this.pendingFlush.then(() => {
-          const result = this.pendingFlushResult || {};
-          callback(result.error, result.data);
-        });
+        // We attach the callback to the end of the chain to support a caller calling `flush()` multiple times when the queue is empty.
+        this.pendingFlush = this.pendingFlush.then(
+          () => {
+            callback();
+            return Promise.resolve();
+          },
+          (err) => {
+            callback(err);
+            throw err;
+          },
+        );
+        return this.pendingFlush;
       }
 
       this.logger.debug('queue is empty, nothing to flush');
@@ -793,8 +729,14 @@ class Analytics {
       return Promise.resolve();
     }
 
-    if (this.pendingFlush) {
-      await this.pendingFlush;
+    try {
+      if (this.pendingFlush) {
+        await this.pendingFlush;
+      }
+    } catch (err) {
+      this.pendingFlush = null;
+      callback(err);
+      throw err;
     }
 
     const items = this.queue.splice(0, this.flushAt);
@@ -818,14 +760,12 @@ class Analytics {
       sentAt: new Date(),
     };
 
-    const done = (err) =>
-      new Promise((resolve) => {
-        setImmediate(() => {
-          callbacks.forEach((eventCallback) => eventCallback(err, data));
-          callback(err, data);
-          resolve();
-        });
+    const done = (err) => {
+      setImmediate(() => {
+        callbacks.forEach((eventCallback) => eventCallback(err, data));
+        callback(err, data);
       });
+    };
 
     // Don't set the user agent if we're on a browser. The latest spec allows
     // the User-Agent header (see https://fetch.spec.whatwg.org/#terminology-headers
@@ -856,8 +796,7 @@ class Analytics {
 
     if (this.pQueue && this.pQueueInitialized) {
       const request = {
-        headers: req.headers,
-        ...(req.timeout ? { timeout: req.timeout } : {}),
+        ...req,
         data,
       };
       const jobId = uuid();
@@ -878,75 +817,69 @@ class Analytics {
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
           this.state = 'idle';
         })
-        .catch((error) => {
+        .catch(() => {
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
-          this.queue.unshift(items);
+          this.queue.unshift(...items);
           this.state = 'idle';
           // Clean up callbacks if push to queue failed
           this.pCallbacksMap.delete(jobId);
+          // Not rethrown: nothing awaits this chain, so a throw would crash the host process.
+          // The error is not logged as it can carry the job payload, including the write key.
           this.logger.error(
             `failed to push to redis queue, in-memory queue size: ${this.queue.length}`,
           );
-          throw error;
         });
     } else if (!this.pQueue) {
-      const handleErrorHandlerFailure = (handlerError) => {
-        const safeHandlerError = sanitizeTransportError(handlerError, this.writeKey);
-        this.logger.error(`Error handler failed: ${safeHandlerError.message}`);
-      };
-      const flushPromise = this.axiosInstance
+      this.pendingFlush = this.axiosInstance
         .post(`${this.host}${this.path}`, data, req)
-        .then(async () => {
-          this.pendingFlushResult = { data };
-          await done();
-          return data;
+        .then(() => {
+          done();
+          return Promise.resolve(data);
         })
-        .catch(async (err) => {
-          const sanitizedError = sanitizeTransportError(err, this.writeKey);
-          const status = sanitizedError.response?.status;
-          const detail = sanitizedError.response?.statusText || sanitizedError.code || 'unknown';
-          this.logger.error(`Request failed${status ? ` with status ${status}` : ''}: ${detail}`);
+        .catch((err) => {
+          redactCredentials(err);
+          this.logger.error(`Error: ${err.response ? err.response.statusText : err.code}`);
           const isDuringTestExecution =
-            status === 404 && process.env.AVA_MODE_ON && this.path === '/v1/batch' && !this.timeout;
+            err &&
+            err.response &&
+            err.response.status === 404 &&
+            process.env.AVA_MODE_ON &&
+            this.path === '/v1/batch' &&
+            !this.timeout;
+
+          if (typeof this.errorHandler === 'function') {
+            done(isDuringTestExecution ? undefined : err);
+            return this.errorHandler(err);
+          }
 
           // Retry invalid write key while during unit test run. Server responds with 404 status for invalid key
           if (isDuringTestExecution) {
-            this.pendingFlushResult = { data };
-            await done();
-            return undefined;
+            done();
+            return;
           }
 
-          this.pendingFlushResult = { error: sanitizedError, data };
-          await done(sanitizedError);
-          if (typeof this.errorHandler === 'function') {
-            try {
-              Promise.resolve(this.errorHandler(sanitizedError)).catch(handleErrorHandlerFailure);
-            } catch (handlerError) {
-              handleErrorHandlerFailure(handlerError);
-            }
+          if (err.response) {
+            const error = new Error(err.response.statusText);
+            done(error);
+            throw error;
           }
-          return undefined;
-        })
-        .finally(() => {
-          if (this.pendingFlush === flushPromise) {
-            this.pendingFlush = null;
-          }
+
+          done(err);
+          throw err;
         });
-      this.pendingFlush = flushPromise;
-      return flushPromise;
+      return this.pendingFlush;
     } else {
       throw new Error('persistent queue not ready');
     }
   }
 
   _isErrorRetryable(error) {
-    const sanitizedError = sanitizeTransportError(error, this.writeKey);
-    if (sanitizedError.response) {
+    if (error.response) {
       this.logger.error(
-        `Response error status: ${sanitizedError.response.status}\nResponse error code: ${sanitizedError.code}`,
+        `Response error status: ${error.response.status}\nResponse error code: ${error.code}`,
       );
     } else {
-      this.logger.error(`Response error code: ${sanitizedError.code}`);
+      this.logger.error(`Response error code: ${error.code}`);
     }
 
     // Retry Network Errors.

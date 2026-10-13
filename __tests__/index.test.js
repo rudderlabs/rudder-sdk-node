@@ -1,13 +1,13 @@
-/* eslint-disable no-underscore-dangle */
+/* eslint-disable unicorn/filename-case */
 // import bodyParser from 'body-parser';
 const express = require('express');
 const auth = require('basic-auth');
 const bodyParser = require('body-parser');
-// eslint-disable-next-line import/no-unresolved
 const { default: test } = require('ava');
 const Sinon = require('sinon');
 const { setTimeout } = require('node:timers/promises');
 const { AssertionError } = require('assert');
+const { inspect } = require('node:util');
 
 const Analytics = require('../src/index');
 const { version } = require('../package.json');
@@ -254,7 +254,7 @@ test('enqueue - stringify ids handles strings', async (t) => {
       anonymousId: '15796345',
       // We're explicitly testing the behaviour of the library if a customer
       // uses a String constructor.
-      userId: String('prateek'), // eslint-disable-line no-new-wrappers
+      userId: String('prateek'),
       name: 'screen name',
     },
     noop,
@@ -462,225 +462,96 @@ test('flush - evoke callback when errorHandler option is specified', async (t) =
   t.true(callback.calledOnce);
 });
 
-test('flush - sanitize transport failures and clear pending flush state', async (t) => {
-  const writeKey = 'distinctive-write-key';
-  const authorization = `Basic ${Buffer.from(`${writeKey}:`).toString('base64')}`;
-  const rawError = Object.assign(
-    new Error(`connect ECONNREFUSED using ${writeKey} and ${authorization}`),
-    {
-      name: `AxiosError ${writeKey} ${authorization}`,
-      code: 'ECONNREFUSED',
-      config: {
-        auth: { username: writeKey },
-        headers: { Authorization: authorization },
-      },
-      request: { secret: writeKey },
-    },
-  );
-  const axiosInstance = { post: stub().rejects(rawError) };
-  const errorHandler = spy();
-  const eventCallback = spy();
-  const flushCallback = spy();
-  const log = spy();
-  const client = new Analytics(writeKey, {
-    axiosInstance,
-    errorHandler,
-    flushAt: 1,
-    gzip: false,
-    logLevel: 'error',
-    retryCount: 0,
-  });
-  client.logger.logProvider = { error: log };
-  client.flushed = true;
-  client.queue = [{ message: 'event', callback: eventCallback }];
-
-  await t.notThrowsAsync(client.flush(flushCallback));
-
-  t.true(eventCallback.calledOnce);
-  t.true(flushCallback.calledOnce);
-  t.true(errorHandler.calledOnce);
-  t.is(client.pendingFlush, null);
-
-  const notifiedErrors = [
-    eventCallback.firstCall.firstArg,
-    flushCallback.firstCall.firstArg,
-    errorHandler.firstCall.firstArg,
-  ];
-  for (const error of notifiedErrors) {
-    t.is(error.name, 'Error');
-    t.is(error.code, 'ECONNREFUSED');
-    t.false('config' in error);
-    t.false('request' in error);
-    t.false(error.message.includes(writeKey));
-    t.false(error.message.includes(authorization));
-  }
-
-  const output = JSON.stringify(log.args);
-  t.false(output.includes(writeKey));
-  t.false(output.includes(authorization));
-});
-
-test('persistent queue jobs do not store the write key and are bound to their source', async (t) => {
-  const writeKey = 'persistent-secret-key';
-  const addedJobs = [];
-  const client = new Analytics(writeKey, {
-    flushAt: 1,
+const unreachableWriteKey = 'unreachable-sentinel-write-key';
+const createUnreachableClient = (options) => {
+  const client = new Analytics(unreachableWriteKey, {
+    dataPlaneUrl: 'http://127.0.0.1:1',
     flushInterval: 60_000,
-    gzip: false,
     logLevel: 'none',
     retryCount: 0,
+    ...options,
   });
+  createdClients.push(client);
+  return client;
+};
+const recordUnhandledRejections = () => {
+  const rejections = [];
+  const listener = (reason) => rejections.push(reason);
+  process.on('unhandledRejection', listener);
+  return { rejections, stop: () => process.removeListener('unhandledRejection', listener) };
+};
+
+test('flush - redact the write key from transport errors without changing their shape', async (t) => {
+  const errorHandler = spy();
+  const client = createUnreachableClient({ errorHandler });
   client.flushed = true;
-  client.pQueueInitialized = true;
-  client.pQueue = {
-    add: (job) => {
-      addedJobs.push(job);
-      return Promise.resolve();
-    },
-  };
-  client.queue = [{ message: 'event', callback: noop }];
+  const eventCallback = spy();
+  client.track({ event: 'unreachable', userId: 'user-1' }, eventCallback);
 
   await client.flush();
   await setTimeout(5);
 
-  t.is(addedJobs.length, 1);
-  t.is(addedJobs[0].version, 4);
-  t.truthy(addedJobs[0].writeKeyBinding);
-  t.truthy(addedJobs[0].eventDataSignature);
-  t.false(addedJobs[0].eventData.includes(writeKey));
+  const error = errorHandler.firstCall.firstArg;
+  t.is(eventCallback.firstCall.firstArg, error);
+  t.true(error.isAxiosError);
+  t.is(error.code, 'ECONNREFUSED');
+  t.truthy(error.request);
+  t.is(error.config.auth, undefined);
 
-  const restoredJobData = client._deserializeJobData({ data: addedJobs[0] });
-  t.truthy(restoredJobData);
-  t.deepEqual(restoredJobData.request.auth, undefined);
-
-  const otherClient = new Analytics('different-write-key', { logLevel: 'none', retryCount: 0 });
-  t.is(otherClient._deserializeJobData({ data: addedJobs[0] }), undefined);
-  clearTimeout(client.timer);
+  const basicAuth = Buffer.from(`${unreachableWriteKey}:`).toString('base64');
+  for (const output of [inspect(error, { depth: Infinity }), JSON.stringify(error)]) {
+    t.false(output.includes(unreachableWriteKey));
+    t.false(output.includes(basicAuth));
+  }
 });
 
-test('legacy persistent queue jobs are scrubbed before being requeued', (t) => {
-  const writeKey = 'legacy-persistent-secret-key';
-  const authorization = `Basic ${Buffer.from(`${writeKey}:`).toString('base64')}`;
-  const legacyJobData = {
-    jobId: 'legacy-job',
-    description: 'legacy job',
-    request: {
-      auth: { username: writeKey },
-      headers: { Authorization: authorization, 'user-agent': 'analytics-node/test' },
-      data: { batch: ['event'] },
-    },
-    attempts: 0,
-  };
-  const client = new Analytics(writeKey, { logLevel: 'none', retryCount: 0 });
-
-  const deserialized = client._deserializeJobData({
-    data: { version: 3, eventData: JSON.stringify(legacyJobData) },
-  });
-  t.truthy(deserialized);
-  t.deepEqual(deserialized.request.auth, undefined);
-  t.deepEqual(deserialized.request.headers.Authorization, undefined);
-
-  const requeued = client._getDataForPersistenceQueue(deserialized);
-  t.is(requeued.version, 4);
-  t.false(requeued.eventData.includes(writeKey));
-  t.truthy(client._deserializeJobData({ data: requeued }));
-
-  const wrongKeyJob = new Analytics('other-key', {
-    logLevel: 'none',
-    retryCount: 0,
-  })._deserializeJobData({
-    data: { version: 3, eventData: JSON.stringify(legacyJobData) },
-  });
-  t.is(wrongKeyJob, undefined);
-});
-
-test('automatic flush failures do not cause an unhandled rejection', async (t) => {
-  const axiosInstance = {
-    post: stub().rejects(Object.assign(new Error('offline'), { code: 'ECONNREFUSED' })),
-  };
-  const client = new Analytics('automatic-flush-key', {
-    axiosInstance,
-    flushAt: 1,
-    gzip: false,
-    logLevel: 'none',
-    retryCount: 0,
-  });
-  const unhandledRejection = spy();
-  process.on('unhandledRejection', unhandledRejection);
-
+test('flush - failures of unawaited flushes do not cause unhandled rejections', async (t) => {
+  const unhandled = recordUnhandledRejections();
   try {
-    client.track({ event: 'automatic flush', userId: 'user-1' });
+    const client = createUnreachableClient();
+    const eventCallback = spy();
+    // The first event triggers an internal flush that nothing awaits.
+    client.track({ event: 'unreachable', userId: 'user-1' }, eventCallback);
+
+    const flushError = await new Promise((resolve) => {
+      client.flush(resolve);
+    });
     await setTimeout(20);
-    t.false(unhandledRejection.called);
-    t.is(client.pendingFlush, null);
+
+    t.is(flushError.code, 'ECONNREFUSED');
+    t.is(eventCallback.firstCall.firstArg.code, 'ECONNREFUSED');
+    t.deepEqual(unhandled.rejections, []);
   } finally {
-    process.removeListener('unhandledRejection', unhandledRejection);
-    if (client.flushTimer) {
-      clearTimeout(client.flushTimer);
-    }
+    unhandled.stop();
   }
 });
 
-test('async error handler rejections are contained and sanitized', async (t) => {
-  const writeKey = 'async-handler-secret-key';
-  const authorization = `Basic ${Buffer.from(`${writeKey}:`).toString('base64')}`;
-  const axiosInstance = {
-    post: stub().rejects(Object.assign(new Error('offline'), { code: 'ECONNREFUSED' })),
-  };
-  const unhandledRejection = spy();
-  const log = spy();
-  const client = new Analytics(writeKey, {
-    axiosInstance,
-    errorHandler: () => Promise.reject(new Error(`handler failed ${writeKey} ${authorization}`)),
-    flushAt: 1,
-    gzip: false,
-    logLevel: 'error',
-    retryCount: 0,
-  });
-  client.logger.logProvider = { error: log };
+test('flush - awaited flush still rejects without an errorHandler', async (t) => {
+  const client = createUnreachableClient();
   client.flushed = true;
-  client.queue = [{ message: 'event', callback: noop }];
-  process.on('unhandledRejection', unhandledRejection);
+  client.track({ event: 'unreachable', userId: 'user-1' });
 
+  await t.throwsAsync(client.flush(), { code: 'ECONNREFUSED' });
+});
+
+test('flush - persistent queue push failure requeues events without an unhandled rejection', async (t) => {
+  const unhandled = recordUnhandledRejections();
   try {
+    const client = createUnreachableClient();
+    client.flushed = true;
+    client.pQueue = { add: () => Promise.reject(new Error('redis down')) };
+    client.pQueueInitialized = true;
+    const item = { message: 'a', callback: noop };
+    client.queue = [item];
+
     await client.flush();
-    await setTimeout(5);
-    t.false(unhandledRejection.called);
-    const output = JSON.stringify(log.args);
-    t.false(output.includes(writeKey));
-    t.false(output.includes(authorization));
+    await setTimeout(20);
+
+    t.deepEqual(client.queue, [item]);
+    t.deepEqual(unhandled.rejections, []);
   } finally {
-    process.removeListener('unhandledRejection', unhandledRejection);
+    unhandled.stop();
   }
-});
-
-test('callbacks attached to an in-flight failed flush receive the failure', async (t) => {
-  const rawError = Object.assign(new Error('offline'), { code: 'ECONNREFUSED' });
-  const axiosInstance = { post: stub().rejects(rawError) };
-  const eventCallback = spy();
-  const flushCallback = spy();
-  const lateFlushCallback = spy();
-  const client = new Analytics('late-flush-key', {
-    axiosInstance,
-    flushAt: 1,
-    gzip: false,
-    logLevel: 'none',
-    retryCount: 0,
-  });
-  client.flushed = true;
-  client.queue = [{ message: 'event', callback: eventCallback }];
-
-  const firstFlush = client.flush(flushCallback);
-  const lateFlush = client.flush(lateFlushCallback);
-  await firstFlush;
-  await lateFlush;
-
-  t.true(eventCallback.calledOnce);
-  t.true(flushCallback.calledOnce);
-  t.true(lateFlushCallback.calledOnce);
-  t.is(eventCallback.firstCall.firstArg.code, 'ECONNREFUSED');
-  t.is(flushCallback.firstCall.firstArg.code, 'ECONNREFUSED');
-  t.is(lateFlushCallback.firstCall.firstArg.code, 'ECONNREFUSED');
 });
 
 test.skip('flush - time out if configured', async (t) => {

@@ -10,20 +10,6 @@ client.page({ anonymousId: 'anonymous-123', category: 'Marketing' });
 client.page({ userId: 'user-123', name: 'Pricing' });
 client.screen({ anonymousId: 'anonymous-123', name: 'Home' });
 client.alias({ userId: 'user-123', previousId: 'anonymous-123' });
-client.flush((error) => {
-  if (error) {
-    error.code;
-    error.response?.status;
-    error.response?.statusText;
-  }
-});
-
-new Analytics('write-key', {
-  errorHandler: async (error: Analytics.SanitizedTransportError) => {
-    error.code;
-    error.response?.status;
-  },
-});
 
 // @ts-expect-error A page event requires a userId or anonymousId.
 client.page({});

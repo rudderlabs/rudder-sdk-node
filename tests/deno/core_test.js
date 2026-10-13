@@ -189,70 +189,23 @@ Deno.test('failed requests invoke the event callback and error handler', async (
   }
 });
 
-Deno.test(
-  'configured request timeouts reach the event callback without rejecting flush',
-  async () => {
-    const receiver = createReceiver(
-      () => new Promise((resolve) => setTimeout(() => resolve(new Response()), 200)),
-    );
-    try {
-      const client = createClient(receiver, { gzip: false, timeout: 20 });
-      client.flushed = true;
-
-      const callback = callbackResult((done) =>
-        client.track({ event: 'Timeout failure', userId: 'user-1' }, done),
-      );
-      assert.equal(await client.flush(), undefined);
-      const result = await callback;
-
-      assert.match(result.error.message, /timeout of 20ms exceeded/);
-    } finally {
-      await receiver.close();
-    }
-  },
-);
-
-Deno.test('connection failures expose only credential-safe errors', async () => {
-  const writeKey = 'deno-secret-write-key';
-  const authorization = `Basic ${btoa(`${writeKey}:`)}`;
-  const axiosInstance = {
-    post: () =>
-      Promise.reject(
-        Object.assign(new Error(`offline ${writeKey} ${authorization}`), {
-          code: 'ECONNREFUSED',
-          config: {
-            auth: { username: writeKey },
-            headers: { Authorization: authorization },
-          },
-          request: { writeKey },
-        }),
-      ),
-  };
-  let handledError;
-  const client = new Analytics(writeKey, {
-    axiosInstance,
-    errorHandler: (error) => {
-      handledError = error;
-    },
-    flushAt: 2,
-    gzip: false,
-    logLevel: 'none',
-    retryCount: 0,
-  });
-  client.flushed = true;
-
-  const callback = callbackResult((done) =>
-    client.track({ event: 'Connection failure', userId: 'user-1' }, done),
+Deno.test('configured request timeouts reach the event callback', async () => {
+  const receiver = createReceiver(
+    () => new Promise((resolve) => setTimeout(() => resolve(new Response()), 200)),
   );
-  assert.equal(await client.flush(), undefined);
-  const result = await callback;
+  try {
+    const client = createClient(receiver, { gzip: false, timeout: 20 });
+    client.flushed = true;
 
-  for (const error of [result.error, handledError]) {
-    assert.equal(error.code, 'ECONNREFUSED');
-    assert.equal('config' in error, false);
-    assert.equal('request' in error, false);
-    assert.equal(error.message.includes(writeKey), false);
-    assert.equal(error.message.includes(authorization), false);
+    const callback = callbackResult((done) =>
+      client.track({ event: 'Timeout failure', userId: 'user-1' }, done),
+    );
+    await assert.rejects(client.flush(), /timeout of 20ms exceeded/);
+    const result = await callback;
+
+    assert.match(result.error.message, /timeout of 20ms exceeded/);
+  } finally {
+    await receiver.close();
   }
 });
 
@@ -274,5 +227,26 @@ Deno.test('the flush timer delivers queued events', async () => {
     assert.equal(receiver.requests[1].body.batch[0].event, 'Timer flush');
   } finally {
     await receiver.close();
+  }
+});
+
+Deno.test('connection failures reach callbacks without exposing the write key', async () => {
+  const client = new Analytics(WRITE_KEY, {
+    dataPlaneUrl: 'http://127.0.0.1:1',
+    logLevel: 'none',
+    retryCount: 0,
+  });
+
+  // The first event triggers an unawaited flush; its failure must not be an unhandled rejection.
+  const results = await Promise.all([
+    callbackResult((done) => client.track({ event: 'Connection failure', userId: 'user-1' }, done)),
+    callbackResult((done) => client.flush(done)),
+  ]);
+
+  for (const { error } of results) {
+    assert.equal(error.code, 'ECONNREFUSED');
+    const dump = `${Deno.inspect(error, { depth: Infinity })}${JSON.stringify(error)}`;
+    assert.equal(dump.includes(WRITE_KEY), false);
+    assert.equal(dump.includes(btoa(`${WRITE_KEY}:`)), false);
   }
 });
