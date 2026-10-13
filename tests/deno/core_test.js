@@ -189,23 +189,70 @@ Deno.test('failed requests invoke the event callback and error handler', async (
   }
 });
 
-Deno.test('configured request timeouts reach the event callback', async () => {
-  const receiver = createReceiver(
-    () => new Promise((resolve) => setTimeout(() => resolve(new Response()), 200)),
-  );
-  try {
-    const client = createClient(receiver, { gzip: false, timeout: 20 });
-    client.flushed = true;
-
-    const callback = callbackResult((done) =>
-      client.track({ event: 'Timeout failure', userId: 'user-1' }, done),
+Deno.test(
+  'configured request timeouts reach the event callback without rejecting flush',
+  async () => {
+    const receiver = createReceiver(
+      () => new Promise((resolve) => setTimeout(() => resolve(new Response()), 200)),
     );
-    await assert.rejects(client.flush(), /timeout of 20ms exceeded/);
-    const result = await callback;
+    try {
+      const client = createClient(receiver, { gzip: false, timeout: 20 });
+      client.flushed = true;
 
-    assert.match(result.error.message, /timeout of 20ms exceeded/);
-  } finally {
-    await receiver.close();
+      const callback = callbackResult((done) =>
+        client.track({ event: 'Timeout failure', userId: 'user-1' }, done),
+      );
+      assert.equal(await client.flush(), undefined);
+      const result = await callback;
+
+      assert.match(result.error.message, /timeout of 20ms exceeded/);
+    } finally {
+      await receiver.close();
+    }
+  },
+);
+
+Deno.test('connection failures expose only credential-safe errors', async () => {
+  const writeKey = 'deno-secret-write-key';
+  const authorization = `Basic ${btoa(`${writeKey}:`)}`;
+  const axiosInstance = {
+    post: () =>
+      Promise.reject(
+        Object.assign(new Error(`offline ${writeKey} ${authorization}`), {
+          code: 'ECONNREFUSED',
+          config: {
+            auth: { username: writeKey },
+            headers: { Authorization: authorization },
+          },
+          request: { writeKey },
+        }),
+      ),
+  };
+  let handledError;
+  const client = new Analytics(writeKey, {
+    axiosInstance,
+    errorHandler: (error) => {
+      handledError = error;
+    },
+    flushAt: 2,
+    gzip: false,
+    logLevel: 'none',
+    retryCount: 0,
+  });
+  client.flushed = true;
+
+  const callback = callbackResult((done) =>
+    client.track({ event: 'Connection failure', userId: 'user-1' }, done),
+  );
+  assert.equal(await client.flush(), undefined);
+  const result = await callback;
+
+  for (const error of [result.error, handledError]) {
+    assert.equal(error.code, 'ECONNREFUSED');
+    assert.equal('config' in error, false);
+    assert.equal('request' in error, false);
+    assert.equal(error.message.includes(writeKey), false);
+    assert.equal(error.message.includes(authorization), false);
   }
 });
 

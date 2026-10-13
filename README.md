@@ -63,21 +63,21 @@ Deno can resend timed-out requests, and queue recovery and shutdown have known l
 
 Below parameters are optional and can be passed during SDK initialization.
 
-| Name                   | Type     | Default value                   | Description                                                                                       |
-| :--------------------- | :------- | :------------------------------ | :------------------------------------------------------------------------------------------------ |
-| `dataPlaneUrl`         | String   | `https://hosted.rudderlabs.com` | The data plane URL.                                                                               |
-| `path`                 | String   | `/v1/batch`                     | Path to batch endpoint.                                                                           |
-| `flushAt`              | Number   | 20                              | The number of events to be flushed when reached this limit.                                       |
-| `flushInterval`        | Number   | 10000                           | The maximum timespan (in milliseconds) after which the events from the in-memory queue is flushed |
-| `maxQueueSize`         | Number   | 460800(500kb)                   | Maximum payload size of a batch request                                                           |
-| `maxInternalQueueSize` | Number   | 20000                           | The maximum length of the in-memory queue                                                         |
-| `logLevel`             | String   | 'info'                          | Log level. `Ex: 'debug', 'error'`                                                                 |
-| `axiosConfig`          | Object   | N/A                             | Axios config                                                                                      |
-| `axiosInstance`        | Object   | N/A                             | Axios instance                                                                                    |
-| `axiosRetryConfig`     | Object   | N/A                             | Axios retry configuration                                                                         |
-| `retryCount`           | Number   | 3                               | Number of times requests will be retried by axios if failed                                       |
-| `errorHandler`         | Function | N/A                             | A function that will be called if request to server failed                                        |
-| `gzip`                 | Boolean  | true                            | Whether to compress request with gzip or not                                                      |
+| Name                   | Type     | Default value                   | Description                                                                                        |
+| :--------------------- | :------- | :------------------------------ | :------------------------------------------------------------------------------------------------- |
+| `dataPlaneUrl`         | String   | `https://hosted.rudderlabs.com` | The data plane URL.                                                                                |
+| `path`                 | String   | `/v1/batch`                     | Path to batch endpoint.                                                                            |
+| `flushAt`              | Number   | 20                              | The number of events to be flushed when reached this limit.                                        |
+| `flushInterval`        | Number   | 10000                           | The maximum timespan (in milliseconds) after which the events from the in-memory queue is flushed  |
+| `maxQueueSize`         | Number   | 460800(500kb)                   | Maximum payload size of a batch request                                                            |
+| `maxInternalQueueSize` | Number   | 20000                           | The maximum length of the in-memory queue                                                          |
+| `logLevel`             | String   | 'info'                          | Log level. `Ex: 'debug', 'error'`                                                                  |
+| `axiosConfig`          | Object   | N/A                             | Axios config                                                                                       |
+| `axiosInstance`        | Object   | N/A                             | Axios instance                                                                                     |
+| `axiosRetryConfig`     | Object   | N/A                             | Axios retry configuration                                                                          |
+| `retryCount`           | Number   | 3                               | Number of times requests will be retried by axios if failed                                        |
+| `errorHandler`         | Function | N/A                             | Called with a credential-safe error if a request fails. Failed flushes resolve after callbacks run |
+| `gzip`                 | Boolean  | true                            | Whether to compress request with gzip or not                                                       |
 
 ## Supported calls
 
@@ -111,6 +111,8 @@ client.createPersistenceQueue({ redisOpts: { host: "localhost" } }, err => {})
 To initialize the data persistence queue, you need to call the `createPersistenceQueue` method which takes two parameters as input - `queueOpts` and a `callback`. The `createPersistenceQueue` method will initialize a Redis list by calling [Bull's](https://github.com/OptimalBits/bull) utility methods.
 
 > **If you do not call `createPersistenceQueue` after initializing the SDK, the SDK will not implement data persistence.**
+>
+> Persistent queue jobs are bound to the write key that created them without storing the raw write key. A processor configured with a different write key skips those jobs, so use separate queues or matching write-key configuration for each source.
 
 Read the detailed [documentation](https://www.rudderstack.com/docs/stream-sources/rudderstack-sdk-integration-guides/rudderstack-node-sdk/#nodejs-sdk-data-persistence) for more information on `createPersistenceQueue` and the other [configurable parameters](https://www.rudderstack.com/docs/stream-sources/rudderstack-sdk-integration-guides/rudderstack-node-sdk/#configurable-parameters).
 
