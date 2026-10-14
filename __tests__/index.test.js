@@ -524,13 +524,20 @@ test('flush - wont flush when no flush condition has meet', async (t) => {
   t.false(client.flush.called);
 });
 
+const utf8Bytes = (value) => Buffer.byteLength(JSON.stringify(value), 'utf8');
+
 test('enqueue - keeps a running byte total of the queue', async (t) => {
   const client = await createClient({ flushAt: 1000 });
 
   client.enqueue('track', { event: 'a', userId: 'user-1' }, noop);
-  client.enqueue('track', { event: 'b', userId: 'user-2' }, noop);
+  client.enqueue('track', { event: 'é', userId: 'user-2' }, noop);
 
-  const expectedBytes = client.queue.reduce((acc, item) => acc + JSON.stringify(item).length, 0);
+  // each event as sent: its JSON, the `,"sentAt":...` flush() adds, and a separating comma
+  const sentAtBytes = Buffer.byteLength(`,"sentAt":${JSON.stringify(new Date(0))}`) + 1;
+  const expectedBytes = client.queue.reduce(
+    (acc, item) => acc + utf8Bytes(item.message) + sentAtBytes,
+    0,
+  );
   t.is(client.queueBytes, expectedBytes);
 
   await client.flush();
@@ -554,19 +561,88 @@ test('enqueue - does not re-serialize the queued items', async (t) => {
   }
 });
 
-test('flush - limits a batch to maxQueueSize bytes', async (t) => {
+test('flush - limits the request body to maxQueueSize bytes', async (t) => {
   const client = await createClient({ flushAt: 1000, maxQueueSize: 1000 });
+  client._scheduleLeftoverFlush = noop; // keep the leftover events queued for the assertions
   client.queue = Array.from({ length: 10 }, (_, i) => ({
     message: { event: 'e'.repeat(200), index: i },
     callback: noop,
   }));
-  const itemBytes = JSON.stringify(client.queue[0]).length;
-  const expectedBatchSize = Math.floor(1000 / itemBytes);
 
   const data = await client.flush();
 
-  t.is(data.batch.length, expectedBatchSize);
-  t.is(client.queue.length, 10 - expectedBatchSize);
+  t.true(data.batch.length > 1);
+  t.true(utf8Bytes(data) <= 1000);
+  // the batch is as large as the limit allows: the next queued event would not fit
+  const withNext = {
+    ...data,
+    batch: [...data.batch, { ...client.queue[0].message, sentAt: data.sentAt }],
+  };
+  t.true(utf8Bytes(withNext) > 1000);
+  t.is(client.queue.length, 10 - data.batch.length);
+});
+
+test('flush - counts multi-byte characters as UTF-8 bytes', async (t) => {
+  const client = await createClient({ flushAt: 1000, maxQueueSize: 1000 });
+  client._scheduleLeftoverFlush = noop;
+  client.queue = Array.from({ length: 10 }, (_, i) => ({
+    // 100 characters, 300 UTF-8 bytes
+    message: { event: '日本'.repeat(50), index: i },
+    callback: noop,
+  }));
+
+  const data = await client.flush();
+
+  t.true(utf8Bytes(data) <= 1000);
+});
+
+test('flush - flushes events left in the queue after a batch', async (t) => {
+  const client = await createClient({ flushAt: 2, flushInterval: 50 });
+  const callbackC = spy();
+  client.queue = [
+    { message: 'a', callback: noop },
+    { message: 'b', callback: noop },
+    { message: 'c', callback: callbackC },
+  ];
+
+  await client.flush();
+  await setTimeout(300);
+
+  t.true(callbackC.calledOnce);
+  t.is(client.queue.length, 0);
+});
+
+test('flush - re-queues each item when the persistent queue rejects a batch', async (t) => {
+  const client = await createClient({ flushAt: 10 });
+  const callbackA = spy();
+  const callbackB = spy();
+  client.enqueue('track', { event: 'a', userId: 'user-1' }, callbackA);
+  client.enqueue('track', { event: 'b', userId: 'user-2' }, callbackB);
+  const queuedItems = [...client.queue];
+  const queuedBytes = client.queueBytes;
+
+  // The SDK rethrows from its rejection handler into a promise nothing awaits, so a
+  // real rejected promise would fail the run as an unhandled rejection. This thenable
+  // runs the handler synchronously instead.
+  client.pQueue = {
+    add: () => ({
+      then: () => ({
+        catch: (onRejected) => {
+          t.throws(() => onRejected(new Error('redis unavailable')));
+        },
+      }),
+    }),
+  };
+  client.pQueueInitialized = true;
+
+  await Analytics.prototype.flush.call(client);
+  clearTimeout(client.timer);
+
+  t.deepEqual(client.queue, queuedItems);
+  t.true(client.queue.every((item, i) => item === queuedItems[i]));
+  t.is(client.queueBytes, queuedBytes);
+  t.false(callbackA.called);
+  t.false(callbackB.called);
 });
 
 test('flush - sends an item larger than maxQueueSize on its own', async (t) => {

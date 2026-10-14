@@ -19,6 +19,14 @@ const noop = () => {};
 
 const JOB_DATA_VERSION = 3;
 
+// Bytes flush() adds to the request after an event is queued: `,"sentAt":"<ISO date>"`
+// on each event plus the comma between events, and the batch envelope around them.
+// Counted so batches are sized as they are sent.
+const EVENT_SENT_AT_BYTES = Buffer.byteLength(`,"sentAt":${JSON.stringify(new Date(0))}`) + 1;
+const BATCH_ENVELOPE_BYTES = Buffer.byteLength(
+  JSON.stringify({ batch: [], timestamp: new Date(0), sentAt: new Date(0) }),
+);
+
 class Analytics {
   /**
    * Initialize a new `Analytics` with your RudderStack source's `writeKey` and an
@@ -618,7 +626,7 @@ class Analytics {
     }
 
     const item = { message: lMessage, callback };
-    const itemBytes = JSON.stringify(item).length;
+    const itemBytes = this._measureItemBytes(item);
     this.queue.push(item);
     this.queueItemBytes.set(item, itemBytes);
     this.queueBytes += itemBytes;
@@ -629,9 +637,7 @@ class Analytics {
       return;
     }
 
-    const hasReachedFlushAt = this.queue.length >= this.flushAt;
-    const hasReachedQueueSize = this.queueBytes >= this.maxQueueSize;
-    if (hasReachedFlushAt || hasReachedQueueSize) {
+    if (this._isBatchReady()) {
       this.logger.debug('flushAt reached, trying flush...');
       this.flush();
       return;
@@ -641,21 +647,46 @@ class Analytics {
   }
 
   /**
-   * Serialized size of a queue item. Items pushed onto `this.queue` directly were
-   * never measured, so they are measured here.
+   * Whether the queue holds a full batch, by event count or by bytes.
+   *
+   * @api private
+   */
+  _isBatchReady() {
+    return (
+      this.queue.length >= this.flushAt ||
+      BATCH_ENVELOPE_BYTES + this.queueBytes >= this.maxQueueSize
+    );
+  }
+
+  /**
+   * UTF-8 bytes a queue item adds to the request body, including the `sentAt` that
+   * flush() sets on it.
+   *
+   * @param {Object} item
+   * @api private
+   */
+  _measureItemBytes(item) {
+    const json = JSON.stringify(item.message);
+    // undefined is serialized as null inside the batch array
+    return Buffer.byteLength(json === undefined ? 'null' : json, 'utf8') + EVENT_SENT_AT_BYTES;
+  }
+
+  /**
+   * Size of a queue item as measured on enqueue(). Items pushed onto `this.queue`
+   * directly were never measured, so they are measured here.
    *
    * @param {Object} item
    * @api private
    */
   _itemBytes(item) {
     const bytes = this.queueItemBytes.get(item);
-    return bytes === undefined ? JSON.stringify(item).length : bytes;
+    return bytes === undefined ? this._measureItemBytes(item) : bytes;
   }
 
   /**
-   * Remove the next batch from the queue: up to `flushAt` items, and no more than
-   * `maxQueueSize` bytes. The first item is always taken, so an item larger than
-   * `maxQueueSize` is still sent, on its own.
+   * Remove the next batch from the queue: up to `flushAt` items, and a request body of
+   * no more than `maxQueueSize` bytes. The first item is always taken, so an item
+   * larger than `maxQueueSize` is still sent, on its own.
    *
    * @api private
    */
@@ -664,7 +695,7 @@ class Analytics {
     let batchBytes = 0;
     while (count < this.flushAt && count < this.queue.length) {
       const itemBytes = this._itemBytes(this.queue[count]);
-      if (count > 0 && batchBytes + itemBytes > this.maxQueueSize) {
+      if (count > 0 && BATCH_ENVELOPE_BYTES + batchBytes + itemBytes > this.maxQueueSize) {
         break;
       }
       batchBytes += itemBytes;
@@ -672,6 +703,22 @@ class Analytics {
     }
     this.queueBytes = Math.max(0, this.queueBytes - batchBytes);
     return this.queue.splice(0, count);
+  }
+
+  /**
+   * flush() sends one batch and cancels the flush timer, so events left in the queue
+   * (a batch cut short by `maxQueueSize`, or more than `flushAt` queued) would wait
+   * for the next enqueue() or flush() call. Flush them right after the current
+   * request if they already make a full batch, otherwise after `flushInterval`.
+   *
+   * @api private
+   */
+  _scheduleLeftoverFlush() {
+    if (this.queue.length === 0 || this.flushTimer) {
+      return;
+    }
+    const delay = this._isBatchReady() ? 0 : this.flushInterval;
+    this.flushTimer = setTimeout(this.flush.bind(this), delay);
   }
 
   setupFlushTimer() {
@@ -862,6 +909,7 @@ class Analytics {
           done(err);
           throw err;
         });
+      this._scheduleLeftoverFlush();
       return this.pendingFlush;
     } else {
       throw new Error('persistent queue not ready');
