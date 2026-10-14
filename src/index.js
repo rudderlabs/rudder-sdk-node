@@ -82,6 +82,7 @@ class Analytics {
     // queued item to check it. Per-item sizes are kept outside the queue entries.
     this.queueBytes = 0;
     this.queueItemBytes = new WeakMap();
+    this.itemFlushes = new WeakMap();
     this.pQueue = undefined;
     this.pQueueInitialized = false;
     this.pQueueOpts = undefined;
@@ -765,12 +766,12 @@ class Analytics {
     if (this.queue.length === 0) {
       if (this.pendingFlush) {
         this.logger.debug('queue is empty, but a flush already exists');
-        // We attach the callback to the end of the chain to support a caller calling `flush()` multiple times when the queue is empty.
-        this.pendingFlush = this.pendingFlush.then(() => {
+        // Observe the active request without replacing it: pendingFlush only tracks the
+        // direct network request that currently owns the single-flight slot.
+        return this.pendingFlush.then(() => {
           callback();
           return Promise.resolve();
         });
-        return this.pendingFlush;
       }
 
       this.logger.debug('queue is empty, nothing to flush');
@@ -788,9 +789,17 @@ class Analytics {
         }
         data = sent;
       } while (this.queue.includes(lastQueued));
+
+      if (!this.queue.includes(lastQueued)) {
+        const lastQueuedFlush = this.itemFlushes.get(lastQueued);
+        if (lastQueuedFlush) {
+          const sent = await lastQueuedFlush;
+          if (sent !== BATCH_NOT_SENT) {
+            data = sent;
+          }
+        }
+      }
     } catch (err) {
-      // The failure is reported to this caller; a later flush shouldn't await it again.
-      this.pendingFlush = null;
       setImmediate(() => callback(err));
       throw err;
     } finally {
@@ -810,13 +819,16 @@ class Analytics {
    * @api private
    */
   async _flushBatch() {
-    try {
-      if (this.pendingFlush) {
-        await this.pendingFlush;
+    while (this.pendingFlush) {
+      const pendingFlush = this.pendingFlush;
+      try {
+        await pendingFlush;
+      } catch (err) {
+        if (this.pendingFlush === pendingFlush) {
+          this.pendingFlush = null;
+        }
+        throw err;
       }
-    } catch (err) {
-      this.pendingFlush = null;
-      throw err;
     }
 
     const items = this._takeBatch();
@@ -887,40 +899,40 @@ class Analytics {
       // Store callbacks in memory map (v3.0.0 security fix - no more serialize-javascript)
       this.pCallbacksMap.set(jobId, callbacks);
 
-      return (
-        this.pQueue
-          .add(this._getDataForPersistenceQueue(eventData))
-          // eslint-disable-next-line no-unused-vars
-          .then((pushedJob) => {
-            this.logger.debug('pushed job to queue');
-            // flush() may push several batches in a row; keep a single retry timer
-            clearTimeout(this.timer);
-            this.timer = setTimeout(() => this._flushFromTimer(), this.flushInterval);
-            this.state = 'idle';
-            return data;
-          })
-          .catch((error) => {
-            clearTimeout(this.timer);
-            this.timer = setTimeout(() => this._flushFromTimer(), this.flushInterval);
-            this.queue.unshift(...items);
-            this.queueBytes += items.reduce((acc, item) => acc + this._itemBytes(item), 0);
-            this.state = 'idle';
-            // Clean up callbacks if push to queue failed
-            this.pCallbacksMap.delete(jobId);
-            this.logger.error(
-              `failed to push to redis queue, in-memory queue size: ${this.queue.length}: ${error}`,
-            );
-            // The items are back in the queue for the retry above; report the error
-            // instead of rejecting, so flush() stops here rather than retrying at once.
-            if (typeof this.errorHandler === 'function') {
-              this.errorHandler(error);
-            }
-            return BATCH_NOT_SENT;
-          })
-      );
+      const batchFlush = this.pQueue
+        .add(this._getDataForPersistenceQueue(eventData))
+        // eslint-disable-next-line no-unused-vars
+        .then((pushedJob) => {
+          this.logger.debug('pushed job to queue');
+          // flush() may push several batches in a row; keep a single retry timer
+          clearTimeout(this.timer);
+          this.timer = setTimeout(() => this._flushFromTimer(), this.flushInterval);
+          this.state = 'idle';
+          return data;
+        })
+        .catch((error) => {
+          clearTimeout(this.timer);
+          this.timer = setTimeout(() => this._flushFromTimer(), this.flushInterval);
+          this.queue.unshift(...items);
+          this.queueBytes += items.reduce((acc, item) => acc + this._itemBytes(item), 0);
+          this.state = 'idle';
+          // Clean up callbacks if push to queue failed
+          this.pCallbacksMap.delete(jobId);
+          this.logger.error(
+            `failed to push to redis queue, in-memory queue size: ${this.queue.length}: ${error}`,
+          );
+          // The items are back in the queue for the retry above; report the error
+          // instead of rejecting, so flush() stops here rather than retrying at once.
+          if (typeof this.errorHandler === 'function') {
+            this.errorHandler(error);
+          }
+          return BATCH_NOT_SENT;
+        });
+      items.forEach((item) => this.itemFlushes.set(item, batchFlush));
+      return batchFlush;
     }
     if (!this.pQueue) {
-      this.pendingFlush = this.axiosInstance
+      const pendingFlush = this.axiosInstance
         .post(`${this.host}${this.path}`, data, req)
         .then(() => {
           done();
@@ -956,7 +968,15 @@ class Analytics {
           done(err);
           throw err;
         });
-      return this.pendingFlush;
+      items.forEach((item) => this.itemFlushes.set(item, pendingFlush));
+      this.pendingFlush = pendingFlush;
+      try {
+        return await pendingFlush;
+      } finally {
+        if (this.pendingFlush === pendingFlush) {
+          this.pendingFlush = null;
+        }
+      }
     }
     throw new Error('persistent queue not ready');
   }

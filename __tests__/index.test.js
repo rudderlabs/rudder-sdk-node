@@ -631,6 +631,77 @@ test('flush - stops at the events queued when it was called', async (t) => {
   t.truthy(client.flushTimer);
 });
 
+test('flush - waits for another flush that sends its last queued event', async (t) => {
+  const client = await createClient({ flushAt: 1, flushInterval: 10000, retryCount: 0 });
+  const releases = [];
+  let flushSettled = false;
+  const post = Sinon.stub(client.axiosInstance, 'post').callsFake(() => {
+    // eslint-disable-next-line compat/compat
+    return new Promise((resolve) => {
+      releases.push(() => resolve());
+    });
+  });
+  client.queue = [
+    { message: 'first', callback: noop },
+    { message: 'second', callback: noop },
+  ];
+
+  const flushPromise = client.flush();
+  flushPromise.then(
+    () => {
+      flushSettled = true;
+    },
+    () => {},
+  );
+  await setTimeout(0);
+  const overlappingFlushPromise = client.flush();
+  await setTimeout(0);
+
+  t.is(post.callCount, 1);
+  releases[0]();
+  await setTimeout(0);
+  await setTimeout(0);
+
+  t.is(post.callCount, 2);
+  t.false(flushSettled);
+
+  releases[1]();
+  await flushPromise;
+  await overlappingFlushPromise;
+  t.true(flushSettled);
+  t.is(client.queue.length, 0);
+});
+
+test('flush - keeps burst-triggered direct sends single-flight', async (t) => {
+  const client = await createClient({ flushAt: 1, flushInterval: 10000, retryCount: 0 });
+  let activePosts = 0;
+  let peakActivePosts = 0;
+  const post = Sinon.stub(client.axiosInstance, 'post').callsFake(async () => {
+    activePosts += 1;
+    peakActivePosts = Math.max(peakActivePosts, activePosts);
+    await setTimeout(10);
+    activePosts -= 1;
+  });
+  const eventCount = 20;
+
+  for (let index = 0; index < eventCount; index += 1) {
+    client.track({ event: `burst-${index}`, userId: `user-${index}` }, noop);
+  }
+
+  const drainDeadline = Date.now() + 3000;
+  while ((post.callCount < eventCount || activePosts > 0) && Date.now() < drainDeadline) {
+    await setTimeout(5);
+  }
+
+  t.true(
+    post.callCount >= eventCount && activePosts === 0,
+    `timed out waiting for burst drain: post.callCount=${post.callCount}, activePosts=${activePosts}, queue.length=${client.queue.length}`,
+  );
+  t.is(post.callCount, eventCount);
+  t.is(client.queue.length, 0);
+  t.is(peakActivePosts, 1);
+});
+
 test('flush - re-queues each item when the persistent queue rejects a batch', async (t) => {
   const errorHandler = spy();
   const client = await createClient({ flushAt: 10, errorHandler });
