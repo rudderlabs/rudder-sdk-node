@@ -712,7 +712,22 @@ class Analytics {
   setupFlushTimer() {
     if (this.flushInterval && !this.flushTimer) {
       this.logger.debug('no existing flush timer, creating new one');
-      this.flushTimer = setTimeout(this.flush.bind(this), this.flushInterval);
+      this.flushTimer = setTimeout(() => this._flushFromTimer(), this.flushInterval);
+    }
+  }
+
+  /**
+   * flush() for a timer. Nothing awaits it, and a failed batch is already reported to
+   * its events' callbacks (and errorHandler) and logged, so its rejection is consumed
+   * here instead of becoming an unhandled rejection.
+   *
+   * @api private
+   */
+  async _flushFromTimer() {
+    try {
+      await this.flush();
+    } catch (err) {
+      this.logger.debug(`flush from timer failed: ${err}`);
     }
   }
 
@@ -880,13 +895,13 @@ class Analytics {
             this.logger.debug('pushed job to queue');
             // flush() may push several batches in a row; keep a single retry timer
             clearTimeout(this.timer);
-            this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
+            this.timer = setTimeout(() => this._flushFromTimer(), this.flushInterval);
             this.state = 'idle';
             return data;
           })
           .catch((error) => {
             clearTimeout(this.timer);
-            this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
+            this.timer = setTimeout(() => this._flushFromTimer(), this.flushInterval);
             this.queue.unshift(...items);
             this.queueBytes += items.reduce((acc, item) => acc + this._itemBytes(item), 0);
             this.state = 'idle';

@@ -685,6 +685,28 @@ test('flush - stops at a failed batch and leaves the rest to the flush timer', a
   t.is(client.queue.length, 0);
 });
 
+test('flush - a failed retry from the flush timer is not an unhandled rejection', async (t) => {
+  // `timeout` makes the test server's 404 a real failure (see isDuringTestExecution)
+  const client = await createClient({ flushAt: 1, flushInterval: 50, timeout: 1000 });
+  // The real flush(), not the callback wrapper from createClient(), so the timer
+  // flush's own promise is the one that must be observed.
+  client.flush = Analytics.prototype.flush.bind(client);
+  const retryCallback = spy();
+  client.queue = [
+    { message: 'error', callback: noop },
+    { message: 'error', callback: retryCallback },
+  ];
+
+  await t.throwsAsync(client.flush());
+  // The timer retries the second batch, which fails too; an unhandled rejection
+  // would fail the test run.
+  await setTimeout(300);
+
+  t.true(retryCallback.calledOnce);
+  t.true(retryCallback.firstCall.args[0] instanceof Error);
+  t.is(client.queue.length, 0);
+});
+
 test('flush - sends an item larger than maxQueueSize on its own', async (t) => {
   const client = await createClient({ flushAt: 10, maxQueueSize: 100 });
   const post = Sinon.spy(client.axiosInstance, 'post');
