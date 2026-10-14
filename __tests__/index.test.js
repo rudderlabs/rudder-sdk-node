@@ -524,6 +524,65 @@ test('flush - wont flush when no flush condition has meet', async (t) => {
   t.false(client.flush.called);
 });
 
+test('enqueue - keeps a running byte total of the queue', async (t) => {
+  const client = await createClient({ flushAt: 1000 });
+
+  client.enqueue('track', { event: 'a', userId: 'user-1' }, noop);
+  client.enqueue('track', { event: 'b', userId: 'user-2' }, noop);
+
+  const expectedBytes = client.queue.reduce((acc, item) => acc + JSON.stringify(item).length, 0);
+  t.is(client.queueBytes, expectedBytes);
+
+  await client.flush();
+
+  t.is(client.queue.length, 0);
+  t.is(client.queueBytes, 0);
+});
+
+test('enqueue - does not re-serialize the queued items', async (t) => {
+  const client = await createClient({ flushAt: 1000 });
+  for (let i = 0; i < 200; i += 1) {
+    client.enqueue('track', { event: 'event', userId: `user-${i}` }, noop);
+  }
+
+  const stringify = Sinon.spy(JSON, 'stringify');
+  try {
+    client.enqueue('track', { event: 'event', userId: 'user-last' }, noop);
+    t.true(stringify.callCount < 5);
+  } finally {
+    stringify.restore();
+  }
+});
+
+test('flush - limits a batch to maxQueueSize bytes', async (t) => {
+  const client = await createClient({ flushAt: 1000, maxQueueSize: 1000 });
+  client.queue = Array.from({ length: 10 }, (_, i) => ({
+    message: { event: 'e'.repeat(200), index: i },
+    callback: noop,
+  }));
+  const itemBytes = JSON.stringify(client.queue[0]).length;
+  const expectedBatchSize = Math.floor(1000 / itemBytes);
+
+  const data = await client.flush();
+
+  t.is(data.batch.length, expectedBatchSize);
+  t.is(client.queue.length, 10 - expectedBatchSize);
+});
+
+test('flush - sends an item larger than maxQueueSize on its own', async (t) => {
+  const client = await createClient({ flushAt: 10, maxQueueSize: 100 });
+  client.queue = [
+    { message: { event: 'x'.repeat(500) }, callback: noop },
+    { message: { event: 'y' }, callback: noop },
+  ];
+
+  const data = await client.flush();
+
+  t.is(data.batch.length, 1);
+  t.is(data.batch[0].event, 'x'.repeat(500));
+  t.is(client.queue.length, 1);
+});
+
 test('identify - enqueue a message', async (t) => {
   const client = await createClient();
   stub(client, 'enqueue');

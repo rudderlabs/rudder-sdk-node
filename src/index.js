@@ -66,6 +66,10 @@ class Analytics {
     assert(writeKey, "You must pass your RudderStack project's write key.");
 
     this.queue = [];
+    // Running byte size of the queue, so enqueue() doesn't re-serialize every
+    // queued item to check it. Per-item sizes are kept outside the queue entries.
+    this.queueBytes = 0;
+    this.queueItemBytes = new WeakMap();
     this.pQueue = undefined;
     this.pQueueInitialized = false;
     this.pQueueOpts = undefined;
@@ -613,7 +617,11 @@ class Analytics {
       lMessage.userId = JSON.stringify(lMessage.userId);
     }
 
-    this.queue.push({ message: lMessage, callback });
+    const item = { message: lMessage, callback };
+    const itemBytes = JSON.stringify(item).length;
+    this.queue.push(item);
+    this.queueItemBytes.set(item, itemBytes);
+    this.queueBytes += itemBytes;
 
     if (!this.flushed) {
       this.flushed = true;
@@ -622,8 +630,7 @@ class Analytics {
     }
 
     const hasReachedFlushAt = this.queue.length >= this.flushAt;
-    const hasReachedQueueSize =
-      this.queue.reduce((acc, item) => acc + JSON.stringify(item).length, 0) >= this.maxQueueSize;
+    const hasReachedQueueSize = this.queueBytes >= this.maxQueueSize;
     if (hasReachedFlushAt || hasReachedQueueSize) {
       this.logger.debug('flushAt reached, trying flush...');
       this.flush();
@@ -631,6 +638,40 @@ class Analytics {
     }
 
     this.setupFlushTimer();
+  }
+
+  /**
+   * Serialized size of a queue item. Items pushed onto `this.queue` directly were
+   * never measured, so they are measured here.
+   *
+   * @param {Object} item
+   * @api private
+   */
+  _itemBytes(item) {
+    const bytes = this.queueItemBytes.get(item);
+    return bytes === undefined ? JSON.stringify(item).length : bytes;
+  }
+
+  /**
+   * Remove the next batch from the queue: up to `flushAt` items, and no more than
+   * `maxQueueSize` bytes. The first item is always taken, so an item larger than
+   * `maxQueueSize` is still sent, on its own.
+   *
+   * @api private
+   */
+  _takeBatch() {
+    let count = 0;
+    let batchBytes = 0;
+    while (count < this.flushAt && count < this.queue.length) {
+      const itemBytes = this._itemBytes(this.queue[count]);
+      if (count > 0 && batchBytes + itemBytes > this.maxQueueSize) {
+        break;
+      }
+      batchBytes += itemBytes;
+      count += 1;
+    }
+    this.queueBytes = Math.max(0, this.queueBytes - batchBytes);
+    return this.queue.splice(0, count);
   }
 
   setupFlushTimer() {
@@ -694,7 +735,7 @@ class Analytics {
       throw err;
     }
 
-    const items = this.queue.splice(0, this.flushAt);
+    const items = this._takeBatch();
     // Do not proceed in case the items array is empty
     if (items.length === 0) {
       setImmediate(callback);
@@ -774,7 +815,8 @@ class Analytics {
         })
         .catch((error) => {
           this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
-          this.queue.unshift(items);
+          this.queue.unshift(...items);
+          this.queueBytes += items.reduce((acc, item) => acc + this._itemBytes(item), 0);
           this.state = 'idle';
           // Clean up callbacks if push to queue failed
           this.pCallbacksMap.delete(jobId);
