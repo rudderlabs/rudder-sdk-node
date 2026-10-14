@@ -1,9 +1,8 @@
-/* eslint-disable no-underscore-dangle */
+/* eslint-disable unicorn/filename-case -- `__tests__` is the test directory */
 // import bodyParser from 'body-parser';
 const express = require('express');
 const auth = require('basic-auth');
 const bodyParser = require('body-parser');
-// eslint-disable-next-line import/no-unresolved
 const { default: test } = require('ava');
 const Sinon = require('sinon');
 const { setTimeout } = require('node:timers/promises');
@@ -254,7 +253,7 @@ test('enqueue - stringify ids handles strings', async (t) => {
       anonymousId: '15796345',
       // We're explicitly testing the behaviour of the library if a customer
       // uses a String constructor.
-      userId: String('prateek'), // eslint-disable-line no-new-wrappers
+      userId: String('prateek'),
       name: 'screen name',
     },
     noop,
