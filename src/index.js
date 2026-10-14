@@ -718,7 +718,16 @@ class Analytics {
       return;
     }
     const delay = this._isBatchReady() ? 0 : this.flushInterval;
-    this.flushTimer = setTimeout(this.flush.bind(this), delay);
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      // A flush() that was already waiting on the request may have taken them.
+      if (this.queue.length === 0) {
+        return;
+      }
+      // A failed request is passed to its events' callbacks and logged in flush();
+      // nothing awaits this timer, so its rejection must not go unhandled.
+      this.flush().catch(noop);
+    }, delay);
   }
 
   setupFlushTimer() {
@@ -868,9 +877,13 @@ class Analytics {
           // Clean up callbacks if push to queue failed
           this.pCallbacksMap.delete(jobId);
           this.logger.error(
-            `failed to push to redis queue, in-memory queue size: ${this.queue.length}`,
+            `failed to push to redis queue, in-memory queue size: ${this.queue.length}: ${error}`,
           );
-          throw error;
+          // Nothing awaits this chain, so rethrowing would be an unhandled rejection that
+          // can stop the process before the retry above runs. Report it instead.
+          if (typeof this.errorHandler === 'function') {
+            this.errorHandler(error);
+          }
         });
     } else if (!this.pQueue) {
       this.pendingFlush = this.axiosInstance
@@ -909,8 +922,21 @@ class Analytics {
           done(err);
           throw err;
         });
-      this._scheduleLeftoverFlush();
-      return this.pendingFlush;
+      // Schedule leftover events once this request settles. A flush started while it
+      // is in flight would await it, and if it rejects, throw from a timer with nothing
+      // to catch it and leave the leftovers unscheduled. A rejected request is cleared
+      // so the next flush doesn't await it again; callers of flush() still get it.
+      const request = this.pendingFlush;
+      request.then(
+        () => this._scheduleLeftoverFlush(),
+        () => {
+          if (this.pendingFlush === request) {
+            this.pendingFlush = null;
+          }
+          this._scheduleLeftoverFlush();
+        },
+      );
+      return request;
     } else {
       throw new Error('persistent queue not ready');
     }

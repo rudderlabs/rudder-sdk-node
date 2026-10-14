@@ -613,7 +613,8 @@ test('flush - flushes events left in the queue after a batch', async (t) => {
 });
 
 test('flush - re-queues each item when the persistent queue rejects a batch', async (t) => {
-  const client = await createClient({ flushAt: 10 });
+  const errorHandler = spy();
+  const client = await createClient({ flushAt: 10, errorHandler });
   const callbackA = spy();
   const callbackB = spy();
   client.enqueue('track', { event: 'a', userId: 'user-1' }, callbackA);
@@ -621,21 +622,17 @@ test('flush - re-queues each item when the persistent queue rejects a batch', as
   const queuedItems = [...client.queue];
   const queuedBytes = client.queueBytes;
 
-  // The SDK rethrows from its rejection handler into a promise nothing awaits, so a
-  // real rejected promise would fail the run as an unhandled rejection. This thenable
-  // runs the handler synchronously instead.
+  const redisError = new Error('redis unavailable');
   client.pQueue = {
-    add: () => ({
-      then: () => ({
-        catch: (onRejected) => {
-          t.throws(() => onRejected(new Error('redis unavailable')));
-        },
-      }),
-    }),
+    add: async () => {
+      throw redisError;
+    },
   };
   client.pQueueInitialized = true;
 
+  // A rejection left unhandled here would fail the test run.
   await Analytics.prototype.flush.call(client);
+  await setTimeout(10);
   clearTimeout(client.timer);
 
   t.deepEqual(client.queue, queuedItems);
@@ -643,6 +640,25 @@ test('flush - re-queues each item when the persistent queue rejects a batch', as
   t.is(client.queueBytes, queuedBytes);
   t.false(callbackA.called);
   t.false(callbackB.called);
+  t.true(errorHandler.calledOnceWithExactly(redisError));
+});
+
+test('flush - flushes the leftover events after a failed request', async (t) => {
+  // `timeout` makes the test server's 404 a real failure (see isDuringTestExecution)
+  const client = await createClient({ flushAt: 1, flushInterval: 50, timeout: 1000 });
+  const callbackC = spy();
+  client.queue = [
+    { message: 'error', callback: noop },
+    { message: 'c', callback: callbackC },
+  ];
+
+  // The real flush(), not the callback wrapper from createClient(), so its rejection is observed.
+  await t.throwsAsync(Analytics.prototype.flush.call(client));
+  // A rejection left unhandled by the leftover flush would fail the test run.
+  await setTimeout(300);
+
+  t.true(callbackC.calledOnce);
+  t.is(client.queue.length, 0);
 });
 
 test('flush - sends an item larger than maxQueueSize on its own', async (t) => {
