@@ -19,6 +19,18 @@ const noop = () => {};
 
 const JOB_DATA_VERSION = 3;
 
+// Bytes flush() adds to the request after an event is queued: `,"sentAt":"<ISO date>"`
+// on each event plus the comma between events, and the batch envelope around them.
+// Counted so batches are sized as they are sent.
+const EVENT_SENT_AT_BYTES = Buffer.byteLength(`,"sentAt":${JSON.stringify(new Date(0))}`) + 1;
+const BATCH_ENVELOPE_BYTES = Buffer.byteLength(
+  JSON.stringify({ batch: [], timestamp: new Date(0), sentAt: new Date(0) }),
+);
+
+// Returned by _flushBatch() when the persistent queue rejected the batch, so flush()
+// stops instead of retrying the re-queued events straight away.
+const BATCH_NOT_SENT = Symbol('batch not sent');
+
 class Analytics {
   /**
    * Initialize a new `Analytics` with your RudderStack source's `writeKey` and an
@@ -66,6 +78,10 @@ class Analytics {
     assert(writeKey, "You must pass your RudderStack project's write key.");
 
     this.queue = [];
+    // Running byte size of the queue, so enqueue() doesn't re-serialize every
+    // queued item to check it. Per-item sizes are kept outside the queue entries.
+    this.queueBytes = 0;
+    this.queueItemBytes = new WeakMap();
     this.pQueue = undefined;
     this.pQueueInitialized = false;
     this.pQueueOpts = undefined;
@@ -613,7 +629,11 @@ class Analytics {
       lMessage.userId = JSON.stringify(lMessage.userId);
     }
 
-    this.queue.push({ message: lMessage, callback });
+    const item = { message: lMessage, callback };
+    const itemBytes = this._measureItemBytes(item);
+    this.queue.push(item);
+    this.queueItemBytes.set(item, itemBytes);
+    this.queueBytes += itemBytes;
 
     if (!this.flushed) {
       this.flushed = true;
@@ -621,10 +641,7 @@ class Analytics {
       return;
     }
 
-    const hasReachedFlushAt = this.queue.length >= this.flushAt;
-    const hasReachedQueueSize =
-      this.queue.reduce((acc, item) => acc + JSON.stringify(item).length, 0) >= this.maxQueueSize;
-    if (hasReachedFlushAt || hasReachedQueueSize) {
+    if (this._isBatchReady()) {
       this.logger.debug('flushAt reached, trying flush...');
       this.flush();
       return;
@@ -633,17 +650,93 @@ class Analytics {
     this.setupFlushTimer();
   }
 
+  /**
+   * Whether the queue holds a full batch, by event count or by bytes.
+   *
+   * @api private
+   */
+  _isBatchReady() {
+    return (
+      this.queue.length >= this.flushAt ||
+      BATCH_ENVELOPE_BYTES + this.queueBytes >= this.maxQueueSize
+    );
+  }
+
+  /**
+   * UTF-8 bytes a queue item adds to the request body, including the `sentAt` that
+   * flush() sets on it.
+   *
+   * @param {Object} item
+   * @api private
+   */
+  _measureItemBytes(item) {
+    const json = JSON.stringify(item.message);
+    // undefined is serialized as null inside the batch array
+    return Buffer.byteLength(json === undefined ? 'null' : json, 'utf8') + EVENT_SENT_AT_BYTES;
+  }
+
+  /**
+   * Size of a queue item as measured on enqueue(). Items pushed onto `this.queue`
+   * directly were never measured, so they are measured here.
+   *
+   * @param {Object} item
+   * @api private
+   */
+  _itemBytes(item) {
+    const bytes = this.queueItemBytes.get(item);
+    return bytes === undefined ? this._measureItemBytes(item) : bytes;
+  }
+
+  /**
+   * Remove the next batch from the queue: up to `flushAt` items, and a request body of
+   * no more than `maxQueueSize` bytes. The first item is always taken, so an item
+   * larger than `maxQueueSize` is still sent, on its own.
+   *
+   * @api private
+   */
+  _takeBatch() {
+    let count = 0;
+    let batchBytes = 0;
+    while (count < this.flushAt && count < this.queue.length) {
+      const itemBytes = this._itemBytes(this.queue[count]);
+      if (count > 0 && BATCH_ENVELOPE_BYTES + batchBytes + itemBytes > this.maxQueueSize) {
+        break;
+      }
+      batchBytes += itemBytes;
+      count += 1;
+    }
+    this.queueBytes = Math.max(0, this.queueBytes - batchBytes);
+    return this.queue.splice(0, count);
+  }
+
   setupFlushTimer() {
     if (this.flushInterval && !this.flushTimer) {
       this.logger.debug('no existing flush timer, creating new one');
-      this.flushTimer = setTimeout(this.flush.bind(this), this.flushInterval);
+      this.flushTimer = setTimeout(() => this._flushFromTimer(), this.flushInterval);
     }
   }
 
   /**
-   * Flush the current queue
+   * flush() for a timer. Nothing awaits it, and a failed batch is already reported to
+   * its events' callbacks (and errorHandler) and logged, so its rejection is consumed
+   * here instead of becoming an unhandled rejection.
    *
-   * @param {Function} [callback] (optional)
+   * @api private
+   */
+  async _flushFromTimer() {
+    try {
+      await this.flush();
+    } catch (err) {
+      this.logger.debug(`flush from timer failed: ${err}`);
+    }
+  }
+
+  /**
+   * Flush the current queue: send every event queued when flush() is called, one batch
+   * at a time, and resolve once they are all sent. Events enqueued while it runs are
+   * left to the next flush, so it settles even while events keep arriving.
+   *
+   * @param {Function} [callback] (optional) called once, with the last batch sent
    */
 
   async flush(callback) {
@@ -685,6 +778,38 @@ class Analytics {
       return Promise.resolve();
     }
 
+    const lastQueued = this.queue[this.queue.length - 1];
+    let data;
+    try {
+      do {
+        const sent = await this._flushBatch();
+        if (sent === BATCH_NOT_SENT) {
+          break;
+        }
+        data = sent;
+      } while (this.queue.includes(lastQueued));
+    } catch (err) {
+      // The failure is reported to this caller; a later flush shouldn't await it again.
+      this.pendingFlush = null;
+      setImmediate(() => callback(err));
+      throw err;
+    } finally {
+      // Events enqueued during the drain, or left by a failed batch, go out with the timer.
+      if (this.queue.length > 0) {
+        this.setupFlushTimer();
+      }
+    }
+    setImmediate(() => callback(undefined, data));
+    return data;
+  }
+
+  /**
+   * Send the next batch, after the request already in flight settles. Resolves with
+   * the batch sent, or BATCH_NOT_SENT if the persistent queue rejected it.
+   *
+   * @api private
+   */
+  async _flushBatch() {
     try {
       if (this.pendingFlush) {
         await this.pendingFlush;
@@ -694,11 +819,10 @@ class Analytics {
       throw err;
     }
 
-    const items = this.queue.splice(0, this.flushAt);
+    const items = this._takeBatch();
     // Do not proceed in case the items array is empty
     if (items.length === 0) {
-      setImmediate(callback);
-      return Promise.resolve();
+      return undefined;
     }
     const callbacks = items.map((item) => item.callback);
     const messages = items.map((item) => {
@@ -718,7 +842,6 @@ class Analytics {
     const done = (err) => {
       setImmediate(() => {
         callbacks.forEach((eventCallback) => eventCallback(err, data));
-        callback(err, data);
       });
     };
 
@@ -764,26 +887,39 @@ class Analytics {
       // Store callbacks in memory map (v3.0.0 security fix - no more serialize-javascript)
       this.pCallbacksMap.set(jobId, callbacks);
 
-      this.pQueue
-        .add(this._getDataForPersistenceQueue(eventData))
-        // eslint-disable-next-line no-unused-vars
-        .then((pushedJob) => {
-          this.logger.debug('pushed job to queue');
-          this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
-          this.state = 'idle';
-        })
-        .catch((error) => {
-          this.timer = setTimeout(this.flush.bind(this), this.flushInterval);
-          this.queue.unshift(items);
-          this.state = 'idle';
-          // Clean up callbacks if push to queue failed
-          this.pCallbacksMap.delete(jobId);
-          this.logger.error(
-            `failed to push to redis queue, in-memory queue size: ${this.queue.length}`,
-          );
-          throw error;
-        });
-    } else if (!this.pQueue) {
+      return (
+        this.pQueue
+          .add(this._getDataForPersistenceQueue(eventData))
+          // eslint-disable-next-line no-unused-vars
+          .then((pushedJob) => {
+            this.logger.debug('pushed job to queue');
+            // flush() may push several batches in a row; keep a single retry timer
+            clearTimeout(this.timer);
+            this.timer = setTimeout(() => this._flushFromTimer(), this.flushInterval);
+            this.state = 'idle';
+            return data;
+          })
+          .catch((error) => {
+            clearTimeout(this.timer);
+            this.timer = setTimeout(() => this._flushFromTimer(), this.flushInterval);
+            this.queue.unshift(...items);
+            this.queueBytes += items.reduce((acc, item) => acc + this._itemBytes(item), 0);
+            this.state = 'idle';
+            // Clean up callbacks if push to queue failed
+            this.pCallbacksMap.delete(jobId);
+            this.logger.error(
+              `failed to push to redis queue, in-memory queue size: ${this.queue.length}: ${error}`,
+            );
+            // The items are back in the queue for the retry above; report the error
+            // instead of rejecting, so flush() stops here rather than retrying at once.
+            if (typeof this.errorHandler === 'function') {
+              this.errorHandler(error);
+            }
+            return BATCH_NOT_SENT;
+          })
+      );
+    }
+    if (!this.pQueue) {
       this.pendingFlush = this.axiosInstance
         .post(`${this.host}${this.path}`, data, req)
         .then(() => {
@@ -821,9 +957,8 @@ class Analytics {
           throw err;
         });
       return this.pendingFlush;
-    } else {
-      throw new Error('persistent queue not ready');
     }
+    throw new Error('persistent queue not ready');
   }
 
   _isErrorRetryable(error) {

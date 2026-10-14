@@ -1,9 +1,8 @@
-/* eslint-disable no-underscore-dangle */
+/* eslint-disable unicorn/filename-case -- `__tests__` is the test directory */
 // import bodyParser from 'body-parser';
 const express = require('express');
 const auth = require('basic-auth');
 const bodyParser = require('body-parser');
-// eslint-disable-next-line import/no-unresolved
 const { default: test } = require('ava');
 const Sinon = require('sinon');
 const { setTimeout } = require('node:timers/promises');
@@ -254,7 +253,7 @@ test('enqueue - stringify ids handles strings', async (t) => {
       anonymousId: '15796345',
       // We're explicitly testing the behaviour of the library if a customer
       // uses a String constructor.
-      userId: String('prateek'), // eslint-disable-line no-new-wrappers
+      userId: String('prateek'),
       name: 'screen name',
     },
     noop,
@@ -382,6 +381,7 @@ test("flush - don't fail when queue is empty", async (t) => {
 
 test('flush - send messages', async (t) => {
   const client = await createClient({ flushAt: 2, gzip: false });
+  const post = Sinon.spy(client.axiosInstance, 'post');
 
   const callbackA = spy();
   const callbackB = spy();
@@ -402,16 +402,20 @@ test('flush - send messages', async (t) => {
     },
   ];
 
+  // every queued message is sent, in batches of flushAt; resolves with the last batch
   const data = await client.flush();
+  t.deepEqual(
+    post.getCalls().map((call) => call.args[1].batch),
+    [['a', 'b'], ['c']],
+  );
   t.deepEqual(Object.keys(data), ['batch', 'timestamp', 'sentAt']);
-  t.deepEqual(data.batch, ['a', 'b']);
+  t.deepEqual(data.batch, ['c']);
   t.true(data.timestamp instanceof Date);
   t.true(data.sentAt instanceof Date);
-  setImmediate(() => {
-    t.true(callbackA.calledOnce);
-    t.true(callbackB.calledOnce);
-    t.false(callbackC.called);
-  });
+  t.is(client.queue.length, 0);
+  t.true(callbackA.calledOnce);
+  t.true(callbackB.calledOnce);
+  t.true(callbackC.calledOnce);
 });
 
 test.skip('flush - respond with an error', async (t) => {
@@ -523,6 +527,201 @@ test('flush - wont flush when no flush condition has meet', async (t) => {
   }
 
   t.false(client.flush.called);
+});
+
+const utf8Bytes = (value) => Buffer.byteLength(JSON.stringify(value), 'utf8');
+
+test('enqueue - keeps a running byte total of the queue', async (t) => {
+  const client = await createClient({ flushAt: 1000 });
+
+  client.enqueue('track', { event: 'a', userId: 'user-1' }, noop);
+  client.enqueue('track', { event: 'é', userId: 'user-2' }, noop);
+
+  // each event as sent: its JSON, the `,"sentAt":...` flush() adds, and a separating comma
+  const sentAtBytes = Buffer.byteLength(`,"sentAt":${JSON.stringify(new Date(0))}`) + 1;
+  const expectedBytes = client.queue.reduce(
+    (acc, item) => acc + utf8Bytes(item.message) + sentAtBytes,
+    0,
+  );
+  t.is(client.queueBytes, expectedBytes);
+
+  await client.flush();
+
+  t.is(client.queue.length, 0);
+  t.is(client.queueBytes, 0);
+});
+
+test('enqueue - does not re-serialize the queued items', async (t) => {
+  const client = await createClient({ flushAt: 1000 });
+  for (let i = 0; i < 200; i += 1) {
+    client.enqueue('track', { event: 'event', userId: `user-${i}` }, noop);
+  }
+
+  const stringify = Sinon.spy(JSON, 'stringify');
+  try {
+    client.enqueue('track', { event: 'event', userId: 'user-last' }, noop);
+    t.true(stringify.callCount < 5);
+  } finally {
+    stringify.restore();
+  }
+});
+
+test('flush - sends every queued event in batches of at most maxQueueSize bytes', async (t) => {
+  const client = await createClient({ flushAt: 1000, maxQueueSize: 1000 });
+  const post = Sinon.spy(client.axiosInstance, 'post');
+  const callbacks = Array.from({ length: 10 }, () => spy());
+  client.queue = callbacks.map((callback, i) => ({
+    message: { event: 'e'.repeat(200), index: i },
+    callback,
+  }));
+
+  await client.flush();
+  await setTimeout(5); // event callbacks run on setImmediate
+
+  const batches = post.getCalls().map((call) => call.args[1]);
+  t.true(batches.length > 1);
+  t.true(batches.every((data) => utf8Bytes(data) <= 1000));
+  // each batch is as large as the limit allows: the next event would not have fit
+  const [first, second] = batches;
+  const withNext = { ...first, batch: [...first.batch, second.batch[0]] };
+  t.true(utf8Bytes(withNext) > 1000);
+  t.is(
+    batches.reduce((acc, data) => acc + data.batch.length, 0),
+    10,
+  );
+  t.is(client.queue.length, 0);
+  t.true(callbacks.every((callback) => callback.calledOnce));
+});
+
+test('flush - counts multi-byte characters as UTF-8 bytes', async (t) => {
+  const client = await createClient({ flushAt: 1000, maxQueueSize: 1000 });
+  const post = Sinon.spy(client.axiosInstance, 'post');
+  client.queue = Array.from({ length: 10 }, (_, i) => ({
+    // 100 characters, 300 UTF-8 bytes
+    message: { event: '日本'.repeat(50), index: i },
+    callback: noop,
+  }));
+
+  await client.flush();
+
+  t.true(post.getCalls().every((call) => utf8Bytes(call.args[1]) <= 1000));
+});
+
+test('flush - stops at the events queued when it was called', async (t) => {
+  const client = await createClient({ flushAt: 1, flushInterval: 10000 });
+  const lateEvent = { message: 'late', callback: noop };
+  const post = Sinon.stub(client.axiosInstance, 'post').callsFake(async () => {
+    // keeps adding events while flush() runs; it must still settle
+    client.queue.push(lateEvent);
+  });
+  client.queue = [
+    { message: 'a', callback: noop },
+    { message: 'b', callback: noop },
+  ];
+
+  await client.flush();
+
+  t.deepEqual(
+    post.getCalls().map((call) => call.args[1].batch),
+    [['a'], ['b']],
+  );
+  t.true(client.queue.length > 0);
+  t.true(client.queue.every((item) => item === lateEvent));
+  // the events added meanwhile are left to the flush timer
+  t.truthy(client.flushTimer);
+});
+
+test('flush - re-queues each item when the persistent queue rejects a batch', async (t) => {
+  const errorHandler = spy();
+  const client = await createClient({ flushAt: 10, errorHandler });
+  const callbackA = spy();
+  const callbackB = spy();
+  client.enqueue('track', { event: 'a', userId: 'user-1' }, callbackA);
+  client.enqueue('track', { event: 'b', userId: 'user-2' }, callbackB);
+  const queuedItems = [...client.queue];
+  const queuedBytes = client.queueBytes;
+
+  const redisError = new Error('redis unavailable');
+  client.pQueue = {
+    add: async () => {
+      throw redisError;
+    },
+  };
+  client.pQueueInitialized = true;
+
+  // A rejection left unhandled here would fail the test run.
+  await Analytics.prototype.flush.call(client);
+  await setTimeout(10);
+  clearTimeout(client.timer);
+  clearTimeout(client.flushTimer);
+
+  t.deepEqual(client.queue, queuedItems);
+  t.true(client.queue.every((item, i) => item === queuedItems[i]));
+  t.is(client.queueBytes, queuedBytes);
+  t.false(callbackA.called);
+  t.false(callbackB.called);
+  t.true(errorHandler.calledOnceWithExactly(redisError));
+});
+
+test('flush - stops at a failed batch and leaves the rest to the flush timer', async (t) => {
+  // `timeout` makes the test server's 404 a real failure (see isDuringTestExecution)
+  const client = await createClient({ flushAt: 1, flushInterval: 50, timeout: 1000 });
+  const callbackC = spy();
+  client.queue = [
+    { message: 'error', callback: noop },
+    { message: 'c', callback: callbackC },
+  ];
+
+  // The real flush(), not the callback wrapper from createClient(), so its rejection is observed.
+  await t.throwsAsync(Analytics.prototype.flush.call(client));
+  t.is(client.queue.length, 1);
+  t.false(callbackC.called);
+
+  // The timer's flush must not trip over the failed request; an unhandled rejection
+  // would fail the test run.
+  await setTimeout(300);
+
+  t.true(callbackC.calledOnce);
+  t.is(client.queue.length, 0);
+});
+
+test('flush - a failed retry from the flush timer is not an unhandled rejection', async (t) => {
+  // `timeout` makes the test server's 404 a real failure (see isDuringTestExecution)
+  const client = await createClient({ flushAt: 1, flushInterval: 50, timeout: 1000 });
+  // The real flush(), not the callback wrapper from createClient(), so the timer
+  // flush's own promise is the one that must be observed.
+  client.flush = Analytics.prototype.flush.bind(client);
+  const retryCallback = spy();
+  client.queue = [
+    { message: 'error', callback: noop },
+    { message: 'error', callback: retryCallback },
+  ];
+
+  await t.throwsAsync(client.flush());
+  // The timer retries the second batch, which fails too; an unhandled rejection
+  // would fail the test run.
+  await setTimeout(300);
+
+  t.true(retryCallback.calledOnce);
+  t.true(retryCallback.firstCall.args[0] instanceof Error);
+  t.is(client.queue.length, 0);
+});
+
+test('flush - sends an item larger than maxQueueSize on its own', async (t) => {
+  const client = await createClient({ flushAt: 10, maxQueueSize: 100 });
+  const post = Sinon.spy(client.axiosInstance, 'post');
+  client.queue = [
+    { message: { event: 'x'.repeat(500) }, callback: noop },
+    { message: { event: 'y' }, callback: noop },
+  ];
+
+  await client.flush();
+
+  t.deepEqual(
+    post.getCalls().map((call) => call.args[1].batch.map((message) => message.event)),
+    [['x'.repeat(500)], ['y']],
+  );
+  t.is(client.queue.length, 0);
 });
 
 test('identify - enqueue a message', async (t) => {
