@@ -840,22 +840,44 @@ test('flush - a flush on an empty queue waits for the drain in flight', async (t
   t.true(settled);
 });
 
-test('flush - a failed drain does not fail the next one', async (t) => {
+test('flush - a flush() overlapping a failed batch resolves once the queue is drained', async (t) => {
   // `timeout` makes the test server's 404 a real failure (see isDuringTestExecution)
   const client = await createClient({ flushAt: 1, flushInterval: 10000, timeout: 1000 });
   const flush = Analytics.prototype.flush.bind(client);
+  const callbackB = spy();
   const callbackC = spy();
-  client.queue = [{ message: 'error', callback: noop }];
+  client.queue = [
+    { message: 'a', callback: noop },
+    { message: 'error', callback: callbackB },
+  ];
 
-  const failing = flush();
+  const first = flush();
   client.queue.push({ message: 'c', callback: callbackC });
-  const next = flush();
+  const overlapping = flush();
 
-  await t.throwsAsync(failing);
-  await t.notThrowsAsync(next);
-  await setTimeout(5);
+  await t.notThrowsAsync(first);
+  await t.notThrowsAsync(overlapping);
+  await setTimeout(5); // event callbacks run on setImmediate
+  t.true(callbackB.firstCall.args[0] instanceof Error);
   t.true(callbackC.calledOnce);
+  t.falsy(callbackC.firstCall.args[0]);
   t.is(client.queue.length, 0);
+});
+
+test('flush - an empty-queue flush() waiting on a failing send resolves', async (t) => {
+  // `timeout` makes the test server's 404 a real failure (see isDuringTestExecution)
+  const client = await createClient({ flushAt: 1, flushInterval: 10000, timeout: 1000 });
+  const flush = Analytics.prototype.flush.bind(client);
+  const callback = spy();
+  client.queue = [{ message: 'error', callback }];
+
+  const first = flush();
+  const waiting = flush();
+
+  await t.notThrowsAsync(first);
+  await t.notThrowsAsync(waiting);
+  await setTimeout(5);
+  t.true(callback.firstCall.args[0] instanceof Error);
 });
 
 test('flush - persistent queue pushes batches one at a time', async (t) => {
@@ -912,48 +934,55 @@ test('flush - re-queues each item when the persistent queue rejects a batch', as
   t.true(errorHandler.calledOnceWithExactly(redisError));
 });
 
-test('flush - stops at a failed batch and leaves the rest to the flush timer', async (t) => {
+test('flush - carries on past a failed batch', async (t) => {
   // `timeout` makes the test server's 404 a real failure (see isDuringTestExecution)
-  const client = await createClient({ flushAt: 1, flushInterval: 50, timeout: 1000 });
+  const client = await createClient({ flushAt: 1, flushInterval: 10000, timeout: 1000 });
+  const callbackA = spy();
   const callbackC = spy();
   client.queue = [
-    { message: 'error', callback: noop },
+    { message: 'error', callback: callbackA },
     { message: 'c', callback: callbackC },
   ];
 
-  // The real flush(), not the callback wrapper from createClient(), so its rejection is observed.
-  await t.throwsAsync(Analytics.prototype.flush.call(client));
-  t.is(client.queue.length, 1);
-  t.false(callbackC.called);
+  // The real flush(), not the callback wrapper from createClient(), so a rejection would show.
+  await t.notThrowsAsync(Analytics.prototype.flush.call(client));
+  await setTimeout(5);
 
-  // The timer's flush must not trip over the failed request; an unhandled rejection
-  // would fail the test run.
-  await setTimeout(300);
-
+  t.true(callbackA.firstCall.args[0] instanceof Error);
   t.true(callbackC.calledOnce);
+  t.falsy(callbackC.firstCall.args[0]);
   t.is(client.queue.length, 0);
 });
 
-test('flush - a failed retry from the flush timer is not an unhandled rejection', async (t) => {
+test('flush - reports failed batches to their callbacks, not to the flush callback', async (t) => {
   // `timeout` makes the test server's 404 a real failure (see isDuringTestExecution)
-  const client = await createClient({ flushAt: 1, flushInterval: 50, timeout: 1000 });
-  // The real flush(), not the callback wrapper from createClient(), so the timer
-  // flush's own promise is the one that must be observed.
-  client.flush = Analytics.prototype.flush.bind(client);
-  const retryCallback = spy();
-  client.queue = [
-    { message: 'error', callback: noop },
-    { message: 'error', callback: retryCallback },
-  ];
+  const client = await createClient({ flushAt: 1, flushInterval: 10000, timeout: 1000 });
+  const callbacks = [spy(), spy()];
+  client.queue = callbacks.map((callback) => ({ message: 'error', callback }));
+  const flushCallback = spy();
 
-  await t.throwsAsync(client.flush());
-  // The timer retries the second batch, which fails too; an unhandled rejection
-  // would fail the test run.
-  await setTimeout(300);
+  await t.notThrowsAsync(Analytics.prototype.flush.call(client, flushCallback));
+  await setTimeout(5);
 
-  t.true(retryCallback.calledOnce);
-  t.true(retryCallback.firstCall.args[0] instanceof Error);
+  t.true(callbacks.every((callback) => callback.firstCall.args[0] instanceof Error));
+  t.true(flushCallback.calledOnce);
+  t.falsy(flushCallback.firstCall.args[0]);
   t.is(client.queue.length, 0);
+});
+
+test('flush - keeps events queued while the persistent queue is not ready', async (t) => {
+  const client = await createClient({ flushAt: 10, flushInterval: 10000 });
+  const callback = spy();
+  client.queue = [{ message: 'a', callback }];
+  client.pQueue = { add: spy() };
+  client.pQueueInitialized = false;
+
+  await t.notThrowsAsync(Analytics.prototype.flush.call(client));
+  clearTimeout(client.flushTimer);
+
+  t.is(client.queue.length, 1);
+  t.false(client.pQueue.add.called);
+  t.false(callback.called);
 });
 
 test('flush - sends an item larger than maxQueueSize on its own', async (t) => {

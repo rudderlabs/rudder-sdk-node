@@ -739,7 +739,9 @@ class Analytics {
   /**
    * Flush the current queue: send every event queued when flush() is called, one batch
    * at a time, and resolve once they are all sent. Events enqueued while it runs are
-   * left to the next flush, so it settles even while events keep arriving.
+   * left to the next flush, so it settles even while events keep arriving. A failed
+   * batch is reported to its events' callbacks (and errorHandler), not to flush(), which
+   * carries on with the rest and does not reject.
    *
    * @param {Function} [callback] (optional) called once, with the last batch sent
    */
@@ -773,13 +775,7 @@ class Analytics {
       return Promise.resolve();
     }
 
-    let data;
-    try {
-      data = await this._scheduleDrain();
-    } catch (err) {
-      setImmediate(() => callback(err));
-      throw err;
-    }
+    const data = await this._scheduleDrain();
     setImmediate(() => callback(undefined, data));
     return data;
   }
@@ -798,8 +794,7 @@ class Analytics {
     if (!this.flushing) {
       return this._startDrain();
     }
-    // The drain in flight reports its own failure; the next one runs regardless.
-    this.nextFlush = this.flushing.catch(noop).then(() => {
+    this.nextFlush = this.flushing.then(() => {
       this.nextFlush = null;
       return this._startDrain();
     });
@@ -814,7 +809,7 @@ class Analytics {
   _startDrain() {
     const drain = this._drain().finally(() => {
       this.flushing = null;
-      // Events left by a failed batch, or pushed onto the queue directly, go out with the timer.
+      // Events the persistent queue couldn't take, or pushed onto the queue directly, go out with the timer.
       if (this.queue.length > 0 && !this.nextFlush) {
         this.setupFlushTimer();
       }
@@ -834,7 +829,14 @@ class Analytics {
     const lastQueued = this.queue[this.queue.length - 1];
     let data;
     while (this.queue.includes(lastQueued)) {
-      const sent = await this._flushBatch();
+      let sent;
+      try {
+        sent = await this._flushBatch();
+      } catch (err) {
+        // Already reported to the batch's callbacks and logged; send the rest.
+        this.logger.debug(`batch failed, flushing the rest: ${err}`);
+        continue;
+      }
       if (sent === BATCH_NOT_SENT) {
         break;
       }
@@ -850,6 +852,11 @@ class Analytics {
    * @api private
    */
   async _flushBatch() {
+    if (this.pQueue && !this.pQueueInitialized) {
+      // Keep the events queued, rather than drop them, until the persistent queue is ready.
+      this.logger.error('persistent queue not ready');
+      return BATCH_NOT_SENT;
+    }
     const items = this._takeBatch();
     // Do not proceed in case the items array is empty
     if (items.length === 0) {
@@ -988,7 +995,6 @@ class Analytics {
           throw err;
         });
     }
-    throw new Error('persistent queue not ready');
   }
 
   _isErrorRetryable(error) {

@@ -200,7 +200,8 @@ Deno.test('configured request timeouts reach the event callback', async () => {
     const callback = callbackResult((done) =>
       client.track({ event: 'Timeout failure', userId: 'user-1' }, done),
     );
-    await assert.rejects(client.flush(), /timeout of 20ms exceeded/);
+    // flush() resolves; the failure reaches the event's callback
+    await client.flush();
     const result = await callback;
 
     assert.match(result.error.message, /timeout of 20ms exceeded/);
