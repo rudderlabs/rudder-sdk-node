@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.0.16](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.15...v3.0.16) (2026-10-15)
+
+
+### Bug Fixes
+
+* send one batch request at a time ([#491](https://github.com/rudderlabs/rudder-sdk-node/issues/491)) ([e17dfcc](https://github.com/rudderlabs/rudder-sdk-node/commit/e17dfccac87f22c50a5aff22ee2f7381e98186ec))
+
+
+### Miscellaneous
+
+* **deps-dev:** bump fast-uri from 3.1.6 to 3.1.8 ([#486](https://github.com/rudderlabs/rudder-sdk-node/issues/486)) ([3eb0006](https://github.com/rudderlabs/rudder-sdk-node/commit/3eb0006a40938e79e1ee9621d0ef3476c084d6f8))
+* **deps-dev:** bump ip-address from 10.7.0 to 10.7.4 ([#489](https://github.com/rudderlabs/rudder-sdk-node/issues/489)) ([fcd6450](https://github.com/rudderlabs/rudder-sdk-node/commit/fcd64504b31894f3ecc7be245897da0036d93035))
+* **deps-dev:** bump js-yaml from 3.14.2 to 3.15.2 in the npm-security-major group ([#470](https://github.com/rudderlabs/rudder-sdk-node/issues/470)) ([45b8c40](https://github.com/rudderlabs/rudder-sdk-node/commit/45b8c40f1f8931722d5db338de020d4dcf878e66))
+* **deps-dev:** bump proxy-addr from 2.0.7 to 2.0.8 ([#490](https://github.com/rudderlabs/rudder-sdk-node/issues/490)) ([5476f0c](https://github.com/rudderlabs/rudder-sdk-node/commit/5476f0cb7daab170c9f274dc362753a20d0c8a04))
+* **deps-dev:** bump source-map-js from 1.2.1 to 1.2.2 ([#488](https://github.com/rudderlabs/rudder-sdk-node/issues/488)) ([8388f63](https://github.com/rudderlabs/rudder-sdk-node/commit/8388f63f5f63f05f6ac70fd9df556b0d166a9783))
+* **deps-dev:** bump the npm-development-non-major group across 1 directory with 10 updates ([#477](https://github.com/rudderlabs/rudder-sdk-node/issues/477)) ([55a5ebd](https://github.com/rudderlabs/rudder-sdk-node/commit/55a5ebd45df6f695d07bf1da0e85f1464a28e4dd))
+* **deps:** bump actions/stale from 10.4.0 to 11.0.0 ([#476](https://github.com/rudderlabs/rudder-sdk-node/issues/476)) ([469caf3](https://github.com/rudderlabs/rudder-sdk-node/commit/469caf305f6beaf2ddb057c8161fc0ad2b48813d))
+* **deps:** bump brace-expansion ([#487](https://github.com/rudderlabs/rudder-sdk-node/issues/487)) ([9b7effe](https://github.com/rudderlabs/rudder-sdk-node/commit/9b7effe4820d802bab689b728c360d41c83b6163))
+* **deps:** bump qs from 6.15.3 to 6.16.1 ([#493](https://github.com/rudderlabs/rudder-sdk-node/issues/493)) ([4ac6e26](https://github.com/rudderlabs/rudder-sdk-node/commit/4ac6e26fad7b562db8af083dbc297fe4bcd13f0a))
+* **deps:** bump the github-actions-version-non-major group across 1 directory with 6 updates ([#494](https://github.com/rudderlabs/rudder-sdk-node/issues/494)) ([d4cbac1](https://github.com/rudderlabs/rudder-sdk-node/commit/d4cbac164e66b5e178b98ce0f7d34299cbb55e09))
+
 ## [3.0.15](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.14...v3.0.15) (2026-10-14)
 
 
