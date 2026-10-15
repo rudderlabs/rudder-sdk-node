@@ -902,6 +902,57 @@ test('flush - persistent queue pushes batches one at a time', async (t) => {
   t.is(client.queue.length, 0);
 });
 
+test('flush - a flush() from inside a send does not start a second request', async (t) => {
+  const client = await createClient({ flushAt: 1, flushInterval: 10000 });
+  const stats = { active: 0, peak: 0 };
+  let reentered = false;
+  Sinon.stub(client.axiosInstance, 'post').callsFake(() => {
+    stats.active += 1;
+    stats.peak = Math.max(stats.peak, stats.active);
+    if (!reentered) {
+      // like a synchronous axios request hook that enqueues and flushes
+      reentered = true;
+      client.queue.push({ message: 'nested', callback: noop });
+      client.flush();
+    }
+    // eslint-disable-next-line compat/compat
+    return new Promise((resolve) => {
+      globalThis.setTimeout(() => {
+        stats.active -= 1;
+        resolve();
+      }, 5);
+    });
+  });
+  client.queue = [{ message: 'a', callback: noop }];
+
+  await client.flush();
+  await setTimeout(30);
+
+  t.is(stats.peak, 1);
+  t.is(client.queue.length, 0);
+});
+
+test('flush - stops when a failed persistent push leaves the batch queued', async (t) => {
+  const client = await createClient({
+    flushAt: 10,
+    flushInterval: 10000,
+    errorHandler: () => {
+      throw new Error('errorHandler failed');
+    },
+  });
+  const add = Sinon.stub().rejects(new Error('redis unavailable'));
+  client.pQueue = { add };
+  client.pQueueInitialized = true;
+  client.queue = [{ message: 'a', callback: noop }];
+
+  await t.notThrowsAsync(Analytics.prototype.flush.call(client));
+  clearTimeout(client.timer);
+  clearTimeout(client.flushTimer);
+
+  t.is(add.callCount, 1);
+  t.is(client.queue.length, 1);
+});
+
 test('flush - re-queues each item when the persistent queue rejects a batch', async (t) => {
   const errorHandler = spy();
   const client = await createClient({ flushAt: 10, errorHandler });

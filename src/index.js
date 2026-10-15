@@ -807,6 +807,13 @@ class Analytics {
    * @api private
    */
   _startDrain() {
+    // Reserve the slot first: _drain() reaches post() synchronously, and a request hook
+    // calling flush() from there must see a drain in flight.
+    let settle;
+    // eslint-disable-next-line compat/compat
+    this.flushing = new Promise((resolve) => {
+      settle = resolve;
+    });
     const drain = this._drain().finally(() => {
       this.flushing = null;
       // Events the persistent queue couldn't take, or pushed onto the queue directly, go out with the timer.
@@ -814,7 +821,7 @@ class Analytics {
         this.setupFlushTimer();
       }
     });
-    this.flushing = drain;
+    settle(drain);
     return drain;
   }
 
@@ -829,10 +836,15 @@ class Analytics {
     const lastQueued = this.queue[this.queue.length - 1];
     let data;
     while (this.queue.includes(lastQueued)) {
+      const head = this.queue[0];
       let sent;
       try {
         sent = await this._flushBatch();
       } catch (err) {
+        // A batch put back at the front (persistent queue) is left to the retry timer.
+        if (this.queue[0] === head) {
+          break;
+        }
         // Already reported to the batch's callbacks and logged; send the rest.
         this.logger.debug(`batch failed, flushing the rest: ${err}`);
         continue;
