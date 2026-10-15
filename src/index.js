@@ -104,7 +104,9 @@ class Analytics {
     this.flushInterval = flushInterval || 10000;
     this.flushed = false;
     this.errorHandler = errorHandler;
-    this.pendingFlush = null;
+    // The drain in flight, and the one queued to follow it (see _scheduleDrain())
+    this.flushing = null;
+    this.nextFlush = null;
     this.logLevel = logLevel || 'info';
     this.gzip = true;
     if (loadOptions.gzip === false) {
@@ -642,8 +644,11 @@ class Analytics {
     }
 
     if (this._isBatchReady()) {
-      this.logger.debug('flushAt reached, trying flush...');
-      this.flush();
+      // A drain already queued to follow the one in flight will send this event too.
+      if (!this.nextFlush) {
+        this.logger.debug('flushAt reached, trying flush...');
+        this.flush();
+      }
       return;
     }
 
@@ -734,7 +739,9 @@ class Analytics {
   /**
    * Flush the current queue: send every event queued when flush() is called, one batch
    * at a time, and resolve once they are all sent. Events enqueued while it runs are
-   * left to the next flush, so it settles even while events keep arriving.
+   * left to the next flush, so it settles even while events keep arriving. A failed
+   * batch is reported to its events' callbacks (and errorHandler), not to flush(), which
+   * carries on with the rest and does not reject.
    *
    * @param {Function} [callback] (optional) called once, with the last batch sent
    */
@@ -762,63 +769,106 @@ class Analytics {
       this.flushTimer = null;
     }
 
-    if (this.queue.length === 0) {
-      if (this.pendingFlush) {
-        this.logger.debug('queue is empty, but a flush already exists');
-        // We attach the callback to the end of the chain to support a caller calling `flush()` multiple times when the queue is empty.
-        this.pendingFlush = this.pendingFlush.then(() => {
-          callback();
-          return Promise.resolve();
-        });
-        return this.pendingFlush;
-      }
-
+    if (this.queue.length === 0 && !this.flushing && !this.nextFlush) {
       this.logger.debug('queue is empty, nothing to flush');
       setImmediate(callback);
       return Promise.resolve();
     }
 
-    const lastQueued = this.queue[this.queue.length - 1];
-    let data;
-    try {
-      do {
-        const sent = await this._flushBatch();
-        if (sent === BATCH_NOT_SENT) {
-          break;
-        }
-        data = sent;
-      } while (this.queue.includes(lastQueued));
-    } catch (err) {
-      // The failure is reported to this caller; a later flush shouldn't await it again.
-      this.pendingFlush = null;
-      setImmediate(() => callback(err));
-      throw err;
-    } finally {
-      // Events enqueued during the drain, or left by a failed batch, go out with the timer.
-      if (this.queue.length > 0) {
-        this.setupFlushTimer();
-      }
-    }
+    const data = await this._scheduleDrain();
     setImmediate(() => callback(undefined, data));
     return data;
   }
 
   /**
-   * Send the next batch, after the request already in flight settles. Resolves with
-   * the batch sent, or BATCH_NOT_SENT if the persistent queue rejected it.
+   * Run one drain at a time, so a single request is in flight. Callers arriving during a
+   * drain share the next one, which starts once it settles and sends everything queued
+   * by then, so any number of them costs one extra drain.
+   *
+   * @api private
+   */
+  _scheduleDrain() {
+    if (this.nextFlush) {
+      return this.nextFlush;
+    }
+    if (!this.flushing) {
+      return this._startDrain();
+    }
+    this.nextFlush = this.flushing.then(() => {
+      this.nextFlush = null;
+      return this._startDrain();
+    });
+    return this.nextFlush;
+  }
+
+  /**
+   * Start a drain and track it as the one in flight until it settles.
+   *
+   * @api private
+   */
+  _startDrain() {
+    // Reserve the slot first: _drain() reaches post() synchronously, and a request hook
+    // calling flush() from there must see a drain in flight.
+    let settle;
+    // eslint-disable-next-line compat/compat
+    this.flushing = new Promise((resolve) => {
+      settle = resolve;
+    });
+    const drain = this._drain().finally(() => {
+      this.flushing = null;
+      // Events the persistent queue couldn't take, or pushed onto the queue directly, go out with the timer.
+      if (this.queue.length > 0 && !this.nextFlush) {
+        this.setupFlushTimer();
+      }
+    });
+    settle(drain);
+    return drain;
+  }
+
+  /**
+   * Send the events queued now, one batch at a time. Events enqueued meanwhile are left
+   * to the next drain, so it settles even while events keep arriving. Resolves with the
+   * last batch sent.
+   *
+   * @api private
+   */
+  async _drain() {
+    const lastQueued = this.queue[this.queue.length - 1];
+    let data;
+    while (this.queue.includes(lastQueued)) {
+      const head = this.queue[0];
+      let sent;
+      try {
+        sent = await this._flushBatch();
+      } catch (err) {
+        // A batch put back at the front (persistent queue) is left to the retry timer.
+        if (this.queue[0] === head) {
+          break;
+        }
+        // Already reported to the batch's callbacks and logged; send the rest.
+        this.logger.debug(`batch failed, flushing the rest: ${err}`);
+        continue;
+      }
+      if (sent === BATCH_NOT_SENT) {
+        break;
+      }
+      data = sent;
+    }
+    return data;
+  }
+
+  /**
+   * Send the next batch. Resolves with the batch sent, or BATCH_NOT_SENT if the
+   * persistent queue rejected it.
    *
    * @api private
    */
   async _flushBatch() {
-    try {
-      if (this.pendingFlush) {
-        await this.pendingFlush;
-      }
-    } catch (err) {
-      this.pendingFlush = null;
-      throw err;
+    if (this.pQueue && !this.pQueueInitialized) {
+      // Keep the events queued, rather than drop them, until the persistent queue is ready.
+      this.logger.error('persistent queue not ready');
+      return BATCH_NOT_SENT;
     }
-
     const items = this._takeBatch();
     // Do not proceed in case the items array is empty
     if (items.length === 0) {
@@ -920,7 +970,7 @@ class Analytics {
       );
     }
     if (!this.pQueue) {
-      this.pendingFlush = this.axiosInstance
+      return this.axiosInstance
         .post(`${this.host}${this.path}`, data, req)
         .then(() => {
           done();
@@ -956,9 +1006,7 @@ class Analytics {
           done(err);
           throw err;
         });
-      return this.pendingFlush;
     }
-    throw new Error('persistent queue not ready');
   }
 
   _isErrorRetryable(error) {
