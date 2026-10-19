@@ -11,8 +11,16 @@ permissions:
   contents: read # This is required for actions/checkout
 
 jobs:
+  sdk-e2e:
+    # Validate the exact release-event commit before npm publication.
+    if: (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') && github.event.release.prerelease != true
+    uses: ./.github/workflows/server-sdk-e2e.yml
+    secrets:
+      E2E_APP_PRIVATE_KEY: ${{ secrets.E2E_APP_PRIVATE_KEY }}
+
   deploy-tag:
     name: Deploy to NPM
+    needs: sdk-e2e
     runs-on: ubuntu-latest
     # Skip prereleases so they never publish to npm's default `latest` dist-tag.
     if: (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') && github.event.release.prerelease != true
