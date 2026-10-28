@@ -34,7 +34,7 @@ jobs:
       (github.event.pull_request.head.repo.full_name == github.repository &&
        github.actor != 'dependabot[bot]' &&
        github.event.pull_request.user.login != 'dependabot[bot]')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
       - name: Harden the runner (Audit all outbound calls)

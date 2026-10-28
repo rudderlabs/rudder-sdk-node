@@ -47,6 +47,7 @@ jobs:
     needs: sdk-e2e
     outputs:
       version: ${{ steps.release.outputs.version }}
+      uploaded: ${{ steps.publish.outputs.uploaded }}
     runs-on: ubuntu-latest
     # Skip prereleases so they never publish to npm's default `latest` dist-tag.
     if: startsWith(github.ref, 'refs/tags/v') && github.event.release.prerelease != true
@@ -88,11 +89,13 @@ jobs:
           npm run package
 
       - name: Publish package to NPM
+        id: publish
         env:
           HUSKY: 0
         run: |
           cd dist
           npm publish
+          echo 'uploaded=true' >> "$GITHUB_OUTPUT"
 
   published-e2e:
     name: Accept exact published package
@@ -106,77 +109,86 @@ jobs:
       RELEASE_PRIVATE_KEY: ${{ secrets.RELEASE_PRIVATE_KEY }}
 
   notify-slack:
-    name: Report npm release acceptance
-    if: ${{ always() && needs.deploy-tag.result == 'success' }}
-    needs: [deploy-tag, published-e2e]
+    name: Report publication and acceptance outcome
+    if: ${{ always() && needs.validate-ref.result == 'success' }}
+    needs: [validate-ref, sdk-e2e, deploy-tag, published-e2e]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     env:
-      CURRENT_VERSION_VALUE: ${{ needs.deploy-tag.outputs.version }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      CANDIDATE_RESULT: ${{ needs.sdk-e2e.result }}
+      PUBLISH_RESULT: ${{ needs.deploy-tag.result }}
+      UPLOADED: ${{ needs.deploy-tag.outputs.uploaded }}
+      ACCEPTANCE_RESULT: ${{ needs.published-e2e.result }}
+      CENTRAL_RUN_URL: ${{ needs.published-e2e.outputs.run-url }}
+      SLACK_CHANNEL_ID: ${{ secrets.SLACK_RELEASE_CHANNEL_ID }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
-      - name: Record publication and acceptance separately
-        env:
-          ACCEPTANCE_RESULT: ${{ needs.published-e2e.result }}
+      - name: Prepare release status
+        id: message
         run: |
-          echo "npm publication succeeded. Published-package E2E: $ACCEPTANCE_RESULT." >> "$GITHUB_STEP_SUMMARY"
-          echo 'The package remains published if acceptance fails. Retry published-sdk-e2e.yml at the same release tag.' >> "$GITHUB_STEP_SUMMARY"
-      - name: Set notification date
-        run: echo "DATE=$(date)" >> "$GITHUB_ENV"
+          if [[ "$PUBLISH_RESULT" == success && "$UPLOADED" == true && "$ACCEPTANCE_RESULT" == success ]]; then
+            status='accepted'
+          elif [[ "$UPLOADED" == true ]]; then
+            status='published; validation failed or incomplete'
+          elif [[ "$PUBLISH_RESULT" == skipped && "$CANDIDATE_RESULT" != success ]]; then
+            status='publication not attempted; candidate validation failed or incomplete'
+          else
+            status='publication failed or unconfirmed; acceptance incomplete'
+          fi
+          printf 'Node.js SDK %s: %s\n' "$RELEASE_TAG" "$status" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Candidate E2E: %s; npm publication: %s; published-package E2E delivery and cleanup: %s.\n' \
+            "$CANDIDATE_RESULT" "$PUBLISH_RESULT" "$ACCEPTANCE_RESULT" >> "$GITHUB_STEP_SUMMARY"
+          echo 'A failed acceptance does not roll back an uploaded package. Retry published-sdk-e2e.yml at the same tag; the retry does not publish or reannounce.' >> "$GITHUB_STEP_SUMMARY"
+          jq -cn --arg channel "$SLACK_CHANNEL_ID" --arg tag "$RELEASE_TAG" \
+            --arg date "$(date -u +%Y-%m-%d)" --arg status "$status" \
+            '{channel: $channel, text: ("*Node.js SDK " + $tag + " - " + $status + "*\n" + $date + "\nCC: <!subteam^S0555JBV36D> <!subteam^S03SHJ20350>"), unfurl_links: false, unfurl_media: false}' \
+            | sed 's/^/payload=/' >> "$GITHUB_OUTPUT"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
 
-      - name: Send message to Slack channel
-        if: needs.published-e2e.result == 'success'
-        id: slack
+      - name: Post short release status
+        id: root
         continue-on-error: true
-        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d  # v4.0.0
-        env:
-          PROJECT_NAME: 'Node.js SDK'
-          NPM_PACKAGE_URL: 'https://www.npmjs.com/package/@rudderstack/rudder-sdk-node'
-          RELEASES_URL: 'https://github.com/rudderlabs/rudder-sdk-node/releases/tag/v'
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.postMessage
-          payload-templated: true
           retries: rapid
           token: ${{ secrets.SLACK_BOT_TOKEN }}
-          payload: |
-            {
-              "channel": "${{ secrets.SLACK_RELEASE_CHANNEL_ID }}",
-              "text": "*New Release: ${{ env.PROJECT_NAME }} - <${{ env.NPM_PACKAGE_URL }}|${{ env.CURRENT_VERSION_VALUE }}>*\n${{ env.DATE }}\nCC: <!subteam^S0555JBV36D> <!subteam^S03SHJ20350>",
-              "blocks": [
-                {
-                  "type": "header",
-                  "text": {
-                    "type": "plain_text",
-                    "text": "New Release: ${{ env.PROJECT_NAME }}"
-                  }
-                },
-                {
-                  "type": "divider"
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*<${{ env.NPM_PACKAGE_URL }}|v${{ env.CURRENT_VERSION_VALUE }}>*\n${{ env.DATE }}\nCC: <!subteam^S0555JBV36D> <!subteam^S03SHJ20350>"
-                  },
-                  "accessory": {
-                    "type": "image",
-                    "image_url": "https://img.icons8.com/color/452/npm.png",
-                    "alt_text": "NPM Icon"
-                  }
-                },
-                {
-                  "type": "context",
-                  "elements": [
-                    {
-                      "type": "mrkdwn",
-                      "text": "For more details, check the full release notes <${{ env.RELEASES_URL }}${{ env.CURRENT_VERSION_VALUE }}|here>."
-                    }
-                  ]
-                }
-              ]
-            }
+          payload: ${{ steps.message.outputs.payload }}
+
+      - name: Prepare thread details
+        id: thread
+        env:
+          ROOT_TS: ${{ steps.root.outputs.ts }}
+          ROOT_OK: ${{ steps.root.outputs.ok }}
+          RELEASE_STATUS: ${{ steps.message.outputs.status }}
+        run: |
+          if [[ "$ROOT_OK" != true || ! "$ROOT_TS" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            echo 'Slack root message was not confirmed; no thread reply was sent.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          registry_url="https://www.npmjs.com/package/@rudderstack/rudder-sdk-node/v/${RELEASE_TAG#v}"
+          jq -cn --arg channel "$SLACK_CHANNEL_ID" --arg ts "$ROOT_TS" --arg status "$RELEASE_STATUS" \
+            --arg candidate "$CANDIDATE_RESULT" --arg publish "$PUBLISH_RESULT" --arg uploaded "${UPLOADED:-unconfirmed}" \
+            --arg acceptance "$ACCEPTANCE_RESULT" --arg registry "$registry_url" --arg release "$RELEASE_URL" \
+            --arg run "$RUN_URL" --arg central "$CENTRAL_RUN_URL" \
+            '{channel: $channel, thread_ts: $ts, reply_broadcast: false, unfurl_links: false, unfurl_media: false,
+              text: ("*" + $status + "*\nCandidate E2E: " + $candidate + "; npm publication: " + $publish + "; upload confirmed: " + $uploaded + "; full published E2E delivery and cleanup: " + $acceptance + ".\n<" + $registry + "|Exact npm version> | <" + $release + "|Release> | <" + $run + "|Release workflow>" + (if $central != "" then " | <" + $central + "|Central E2E run>" else "" end))}' \
+            | sed 's/^/payload=/' >> "$GITHUB_OUTPUT"
+
+      - name: Post release details in the thread
+        if: steps.thread.outputs.payload != ''
+        continue-on-error: true
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        with:
+          method: chat.postMessage
+          retries: rapid
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: ${{ steps.thread.outputs.payload }}

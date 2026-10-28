@@ -2,6 +2,10 @@ name: Published Node SDK E2E
 
 on:
   workflow_call:
+    outputs:
+      run-url:
+        description: Exact central validation run, when available
+        value: ${{ jobs.validate.outputs.run-url }}
     inputs:
       package-version:
         description: Exact version validated by the publisher
@@ -19,8 +23,10 @@ permissions:
 # Do not cancel live validation; the central workflow owns locking and cleanup.
 jobs:
   validate:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 55
+    outputs:
+      run-url: ${{ steps.e2e.outputs.run-url }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25
@@ -52,6 +58,7 @@ jobs:
           repositories: rudder-sdk-e2e-tests
           permission-actions: write
       - name: Validate the exact public package, delivery, and cleanup
+        id: e2e
         # SDK-5962. Merge only after the shared action and central published mode are reviewed.
         uses: rudderlabs/github-action-sdk-e2e@855d3e174e917aab71b93a862c7e74592904d10e
         with:
