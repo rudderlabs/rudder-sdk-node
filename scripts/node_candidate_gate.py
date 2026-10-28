@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Trusted, credential-free decision logic for Node PR and release E2E gates."""
+"""Trusted decision logic for isolated Node PR candidate validation."""
 import json
 import os
 import re
 import sys
 import time
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 REPOSITORY = "rudderlabs/rudder-sdk-node"
@@ -18,6 +19,23 @@ def github(path, token):
     })
     with urlopen(request, timeout=30) as response:
         return json.load(response)
+
+
+
+def read_pr(number, token, api):
+    pr = dict(api(f"/pulls/{number}", token))
+    # Newer PR API responses can omit merge_commit_sha. Read the synthetic ref directly.
+    pr["merge_commit_sha"] = None
+    if pr.get("state") == "open" and pr.get("mergeable", True) is True:
+        try:
+            reference = api(f"/git/ref/pull/{number}/merge", token)
+        except HTTPError as error:
+            if error.code != 404:
+                raise
+        else:
+            if reference.get("object", {}).get("type") == "commit":
+                pr["merge_commit_sha"] = reference["object"].get("sha")
+    return pr
 
 
 def merge_sha(pr):
@@ -49,7 +67,7 @@ def completed_pr(env, api=github):
     if (not re.fullmatch(r"[1-9][0-9]*", number)
             or not re.fullmatch(r"[1-9][0-9]*", env["VALIDATION_RUN"]) or env.get("GITHUB_REPOSITORY") != REPOSITORY):
         raise ValueError("unsupported PR or validation run")
-    pr = api(f"/pulls/{number}", env["GH_TOKEN"])
+    pr = read_pr(number, env["GH_TOKEN"], api)
     if pr.get("number") != int(number) or merge_sha(pr) != env["EVENT_SHA"] or env["VALIDATED_SHA"] != env["EVENT_SHA"]:
         raise ValueError("completed validation does not match the current PR merge SHA")
     return env["VALIDATED_SHA"]
@@ -59,7 +77,7 @@ def pr_gate(env, api=github, post=None):
     number = env["PR_NUMBER"]
     if not re.fullmatch(r"[1-9][0-9]*", number) or env.get("GITHUB_REPOSITORY") != REPOSITORY:
         raise ValueError("unsupported PR or repository")
-    pr = api(f"/pulls/{number}", env["GH_TOKEN"])
+    pr = read_pr(number, env["GH_TOKEN"], api)
     if pr.get("number") != int(number):
         raise ValueError("PR number changed")
     event_sha = env["EVENT_SHA"]
@@ -88,7 +106,6 @@ def pr_gate(env, api=github, post=None):
     if state != "success":
         raise ValueError(description)
     return description
-
 
 
 def candidates(env, api=github):
@@ -122,8 +139,8 @@ def current_candidate(env, api=github, sleep=time.sleep):
     number = env["PR_NUMBER"]
     if not re.fullmatch(r"[1-9][0-9]*", number) or env.get("GITHUB_REPOSITORY") != REPOSITORY:
         raise ValueError("unsupported PR or repository")
-    for attempt in range(10):
-        pr = api(f"/pulls/{number}", env["GH_TOKEN"])
+    for _ in range(10):
+        pr = read_pr(number, env["GH_TOKEN"], api)
         if pr.get("number") != int(number) or pr.get("state") != "open":
             raise ValueError("PR is no longer open")
         sha = pr.get("merge_commit_sha")

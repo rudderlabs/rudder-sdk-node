@@ -71,7 +71,7 @@ test('aggregate never approves or overwrites the newer SHA from an obsolete even
     const code =
       `import json, node_candidate_gate as g\np=json.loads(${JSON.stringify(JSON.stringify(candidate))})\n` +
       `env={'PR_NUMBER':'42','EVENT_SHA':'${sha}','GITHUB_REPOSITORY':g.REPOSITORY,'GH_TOKEN':'test','HEAD_REPO':'${head}','PR_AUTHOR':'${author}','VALIDATION_RESULT':'${result}','VALIDATED_SHA':'${validated}','VALIDATION_RUN':'','GITHUB_SERVER_URL':'https://github.com'}\n` +
-      `try:\n g.pr_gate(env, api=lambda *a:p, post=lambda target,payload:print(target,payload['context'],payload['state']))\nexcept ValueError:\n pass\n` +
+      `try:\n g.pr_gate(env, api=lambda path,*a: {'object':{'type':'commit','sha':p['merge_commit_sha']}} if path.startswith('/git/ref/pull/') else p, post=lambda target,payload:print(target,payload['context'],payload['state']))\nexcept ValueError:\n pass\n` +
       `print('no status') if p['merge_commit_sha'] != env['EVENT_SHA'] else None`;
     t.is(runPython(code), expected);
   }
@@ -87,7 +87,7 @@ test('a completed PR run must still match the current merge candidate', (t) => {
     const code =
       `import json, node_candidate_gate as g\np=json.loads(${JSON.stringify(JSON.stringify(candidate))})\n` +
       `env={'PR_NUMBER':'42','EVENT_SHA':'${sha}','GITHUB_REPOSITORY':g.REPOSITORY,'GH_TOKEN':'test','VALIDATED_SHA':'${validated}','VALIDATION_RUN':'${run}'}\n` +
-      `try:\n g.completed_pr(env,api=lambda *a:p)\n print('success')\nexcept ValueError:\n print('rejected')`;
+      `try:\n g.completed_pr(env,api=lambda path,*a: {'object':{'type':'commit','sha':p['merge_commit_sha']}} if path.startswith('/git/ref/pull/') else p)\n print('success')\nexcept ValueError:\n print('rejected')`;
     t.is(runPython(code), expected);
   }
 });
@@ -125,11 +125,12 @@ print(g.candidates(env,lambda *a:dict(p,state='closed')))
 test('selection waits for a merge commit with current base and head parents', (t) => {
   const code = `import node_candidate_gate as g
 base='b'*40; head='c'*40; merge='a'*40
-p={'number':42,'state':'open','mergeable':True,'merge_commit_sha':merge,'base':{'ref':'master'},'head':{'sha':head,'repo':{'full_name':g.REPOSITORY}},'user':{'login':'release-bot'}}
+p={'number':42,'state':'open','mergeable':True,'base':{'ref':'master'},'head':{'sha':head,'repo':{'full_name':g.REPOSITORY}},'user':{'login':'release-bot'}}
 env={'PR_NUMBER':'42','GITHUB_REPOSITORY':g.REPOSITORY,'GH_TOKEN':'test'}
 calls=[]
 def api(path,token):
  if path.startswith('/pulls/'): return p
+ if path.startswith('/git/ref/pull/'): return {'object':{'type':'commit','sha':'a'*40}}
  if path=='/git/ref/heads/master': return {'object':{'sha':base}}
  calls.append(path)
  return {'parents':[{'sha':base if len(calls)>1 else 'd'*40},{'sha':head}]}
@@ -149,10 +150,11 @@ except ValueError: print('conflict rejected')
 
 test('selection rejects a changed PR head and an unready candidate', (t) => {
   const code = `import node_candidate_gate as g
-p={'number':42,'state':'open','mergeable':True,'merge_commit_sha':'a'*40,'base':{'ref':'master'},'head':{'sha':'c'*40,'repo':{'full_name':g.REPOSITORY}},'user':{'login':'release-bot'}}
+p={'number':42,'state':'open','mergeable':True,'base':{'ref':'master'},'head':{'sha':'c'*40,'repo':{'full_name':g.REPOSITORY}},'user':{'login':'release-bot'}}
 env={'PR_NUMBER':'42','GITHUB_REPOSITORY':g.REPOSITORY,'GH_TOKEN':'test'}
 def api(path,token):
  if path.startswith('/pulls/'): return p
+ if path.startswith('/git/ref/pull/'): return {'object':{'type':'commit','sha':'a'*40}}
  if path=='/git/ref/heads/master': return {'object':{'sha':'b'*40}}
  return {'parents':[{'sha':'b'*40},{'sha':'d'*40}]}
 for ready in [True,None]:
@@ -182,4 +184,17 @@ test('PR status publication is separate from reusable release validation', (t) =
   t.false(/npm publish|npm ci|ref:.*head|ref:.*merge|suite: full/.test(candidate));
   t.false(release.includes('statuses: write'));
   t.false(release.includes('pull_request:'));
+});
+
+test('missing synthetic ref waits; invalid ref types cannot approve a candidate', (t) => {
+  const code = `import node_candidate_gate as g
+from urllib.error import HTTPError
+p={'number':42,'state':'open','mergeable':True}
+def missing(path,token):
+ if path.startswith('/pulls/'): return p
+ raise HTTPError('url',404,'not ready',{},None)
+print(g.read_pr('42','test',missing)['merge_commit_sha'])
+print(g.read_pr('42','test',lambda path,*a: p if path.startswith('/pulls/') else {'object':{'type':'tag','sha':'a'*40}})['merge_commit_sha'])
+`;
+  t.is(runPython(code), 'None\nNone');
 });

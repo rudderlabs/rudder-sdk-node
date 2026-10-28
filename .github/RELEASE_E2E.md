@@ -35,6 +35,13 @@ bytes. Artifact equality remains a separate release acceptance requirement.
 
 Tracked in [SDK-5980](https://linear.app/rudderstack/issue/SDK-5980).
 
+The PR remains blocked by [the trigger security finding](https://github.com/rudderlabs/rudder-sdk-node/security/code-scanning/60).
+The maintainer requested team review if the mobile implementation provided no
+applicable exception. The [Kotlin caller](https://github.com/rudderlabs/rudder-sdk-kotlin/blob/main/.github/workflows/live-integration-tests.yml)
+uses `pull_request` and skips forks. The [mobile test workflow](https://github.com/rudderlabs/rudder-mobile-sdk-test/blob/main/.github/workflows/live-pr-check-kotlin.yaml)
+uses `workflow_dispatch`. Neither establishes a `pull_request_target` exception.
+No scanner suppression or security-alert dismissal is included.
+
 1. Merge the caller after review and passing native checks.
 2. Verify the status on an ordinary PR and a Release Please PR.
 3. Verify the documented fork and Dependabot exclusions.
