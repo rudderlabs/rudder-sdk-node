@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.0.17](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.16...v3.0.17) (2026-10-28)
+
+
+### Miscellaneous
+
+* **deps-dev:** bump body-parser from 2.3.0 to 2.4.0 ([#499](https://github.com/rudderlabs/rudder-sdk-node/issues/499)) ([027eb99](https://github.com/rudderlabs/rudder-sdk-node/commit/027eb999a307e2de667f3bd36ea1308e905b1066))
+* **deps-dev:** bump fast-uri from 3.1.8 to 3.1.9 ([#500](https://github.com/rudderlabs/rudder-sdk-node/issues/500)) ([721c298](https://github.com/rudderlabs/rudder-sdk-node/commit/721c2985dc3e0d7f08b525638ebc8408f49f23b4))
+* **deps:** bump follow-redirects from 1.16.0 to 1.16.1 ([#496](https://github.com/rudderlabs/rudder-sdk-node/issues/496)) ([b890d47](https://github.com/rudderlabs/rudder-sdk-node/commit/b890d47711f024020de04bf8ced767564b3b24ae))
+* update estimo nanoid override to 5.1.16 ([#501](https://github.com/rudderlabs/rudder-sdk-node/issues/501)) ([0212931](https://github.com/rudderlabs/rudder-sdk-node/commit/021293121103204f062c9ed7eb2a1dfbfccd0b59))
+* update external-editor tmp override to 0.2.6 ([#497](https://github.com/rudderlabs/rudder-sdk-node/issues/497)) ([50b9ebc](https://github.com/rudderlabs/rudder-sdk-node/commit/50b9ebc189df5458b8c88357730df8071ed23f83))
+* validate node candidates before npm publication ([#495](https://github.com/rudderlabs/rudder-sdk-node/issues/495)) ([dc16350](https://github.com/rudderlabs/rudder-sdk-node/commit/dc163500ce33a1189bee90ad240322dc2a51ef59))
+
 ## [3.0.16](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.15...v3.0.16) (2026-10-15)
 
 
