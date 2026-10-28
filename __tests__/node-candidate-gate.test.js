@@ -198,7 +198,7 @@ test('forks and Dependabot cannot reach checkout or token creation, including ma
   );
   const excluded = workflow.split('  excluded:')[1].split('  candidates:')[0];
   const selection = workflow.split('  candidates:')[1].split('  validate:')[0];
-  const excludedGuard = excluded.match(/ {4}if: >-\n([\s\S]*?) {4}runs-on:/)[1];
+  const excludedGuard = excluded.match(/EXCLUDED: >-\s*\$\{\{([\s\S]*?)\}\}/)[1];
   const selectionGuard = selection.match(/ {4}if: >-\n([\s\S]*?) {4}runs-on:/)[1];
   const excludedName = excluded.match(/\$\{\{([\s\S]*?)\}\}/)[1];
   const context = (head, author, actor = author) => ({

@@ -18,17 +18,22 @@ jobs:
           (github.event.pull_request.head.repo.full_name != github.repository ||
            github.event.pull_request.user.login == 'dependabot[bot]') &&
           'Node Candidate E2E' || 'Report excluded PRs' }}
-    if: >-
-      github.event_name == 'pull_request' &&
-      (github.event.pull_request.head.repo.full_name != github.repository ||
-       github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
     steps:
-      - name: Report intentional exclusion
+      - name: Report candidate applicability
+        env:
+          EXCLUDED: >-
+            ${{ github.event_name == 'pull_request' &&
+                (github.event.pull_request.head.repo.full_name != github.repository ||
+                 github.event.pull_request.user.login == 'dependabot[bot]') }}
         run: |
-          echo 'Central E2E validation is excluded for fork and Dependabot PRs. Native tests still apply.' >> "$GITHUB_STEP_SUMMARY"
+          if [ "$EXCLUDED" = 'true' ]; then
+            echo 'Central E2E validation is excluded for fork and Dependabot PRs. Native tests still apply.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Eligible candidates require the separate merge-commit validation check.' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   candidates:
     name: Select open PRs

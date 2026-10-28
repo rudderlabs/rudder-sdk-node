@@ -40,8 +40,8 @@ selects the current candidate, including after base updates.
   at their current merge SHA. It never creates the release App token for them.
 
 The exclusion job uses `Node Candidate E2E` only for excluded PR events. For
-eligible PRs, its skipped job has the different name `Report excluded PRs`.
-This prevents a skipped head check from satisfying the candidate requirement
+eligible PRs, its informational job has the different name `Report excluded PRs`.
+This prevents an informational head check from satisfying the candidate requirement
 when central validation fails. The matrix job remains `Validate PR candidate`.
 No commit status shares the required check name.
 
