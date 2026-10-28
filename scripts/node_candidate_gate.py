@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Trusted decision logic for isolated Node PR candidate validation."""
+"""Decision logic for isolated Node PR candidate validation."""
 import json
 import os
 import re
@@ -53,7 +53,7 @@ def pr_decision(pr, event_sha, head_repo, author, result, validated_sha):
     if head_repo != REPOSITORY or author == "dependabot[bot]":
         if result != "skipped":
             raise ValueError("ineligible PR unexpectedly ran privileged validation")
-        return "success", "No-secret validation intentionally skipped: fork or Dependabot PR"
+        return "skipped", "Central validation intentionally skipped: fork or Dependabot PR"
     if pr.get("head", {}).get("repo", {}).get("full_name") != REPOSITORY:
         raise ValueError("PR head repository changed")
     if result != "success" or validated_sha != current:
@@ -83,7 +83,7 @@ def pr_gate(env, api=github, post=None):
     event_sha = env["EVENT_SHA"]
     if not SHA.fullmatch(event_sha):
         raise ValueError("event has no merge SHA")
-    # An obsolete run must not overwrite the current candidate's status.
+    # An obsolete run must not approve the current candidate.
     if merge_sha(pr) != event_sha:
         raise ValueError("PR merge SHA changed since event; rerun for the new candidate")
     try:
@@ -91,11 +91,12 @@ def pr_gate(env, api=github, post=None):
                                          env["VALIDATION_RESULT"], env["VALIDATED_SHA"])
     except ValueError as error:
         state, description = "failure", str(error)
-    payload = json.dumps({"state": state, "context": "Node Candidate E2E",
-                          "description": description[:140],
-                          "target_url": env["VALIDATION_RUN"] or env["GITHUB_SERVER_URL"] + "/" + REPOSITORY + "/actions"}).encode()
+    payload = json.dumps({"name": "Node Candidate E2E", "head_sha": event_sha,
+                          "status": "completed", "conclusion": state,
+                          "output": {"title": "Node candidate validation", "summary": description},
+                          "details_url": env["VALIDATION_RUN"] or env["GITHUB_SERVER_URL"] + "/" + REPOSITORY + "/actions"}).encode()
     if post is None:
-        request = Request(f"https://api.github.com/repos/{REPOSITORY}/statuses/{event_sha}", payload, {
+        request = Request(f"https://api.github.com/repos/{REPOSITORY}/check-runs", payload, {
             "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2026-03-10",
             "Authorization": f"Bearer {env['GH_TOKEN']}", "Content-Type": "application/json",
         }, method="POST")
@@ -103,7 +104,7 @@ def pr_gate(env, api=github, post=None):
             pass
     else:
         post(event_sha, json.loads(payload))
-    if state != "success":
+    if state not in {"success", "skipped"}:
         raise ValueError(description)
     return description
 
@@ -112,7 +113,7 @@ def candidates(env, api=github):
     if env.get("GITHUB_REPOSITORY") != REPOSITORY:
         raise ValueError("unsupported repository")
     token = env["GH_TOKEN"]
-    if env["GITHUB_EVENT_NAME"] == "pull_request_target":
+    if env["GITHUB_EVENT_NAME"] == "pull_request":
         number = env["PR_NUMBER"]
         if not re.fullmatch(r"[1-9][0-9]*", number):
             raise ValueError("invalid PR number")
@@ -176,7 +177,7 @@ if __name__ == "__main__":
         elif mode == "pr":
             current = current_candidate(os.environ)
             if current["sha"] != os.environ["EVENT_SHA"]:
-                raise ValueError("candidate changed before status publication")
+                raise ValueError("candidate changed before check publication")
             print(pr_gate(os.environ))
             values = {}
         else:

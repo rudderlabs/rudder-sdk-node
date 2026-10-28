@@ -3,6 +3,7 @@ const { default: test } = require('ava');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { runInNewContext } = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const sha = 'a'.repeat(40);
@@ -71,7 +72,7 @@ test('aggregate never approves or overwrites the newer SHA from an obsolete even
     const code =
       `import json, node_candidate_gate as g\np=json.loads(${JSON.stringify(JSON.stringify(candidate))})\n` +
       `env={'PR_NUMBER':'42','EVENT_SHA':'${sha}','GITHUB_REPOSITORY':g.REPOSITORY,'GH_TOKEN':'test','HEAD_REPO':'${head}','PR_AUTHOR':'${author}','VALIDATION_RESULT':'${result}','VALIDATED_SHA':'${validated}','VALIDATION_RUN':'','GITHUB_SERVER_URL':'https://github.com'}\n` +
-      `try:\n g.pr_gate(env, api=lambda path,*a: {'object':{'type':'commit','sha':p['merge_commit_sha']}} if path.startswith('/git/ref/pull/') else p, post=lambda target,payload:print(target,payload['context'],payload['state']))\nexcept ValueError:\n pass\n` +
+      `try:\n g.pr_gate(env, api=lambda path,*a: {'object':{'type':'commit','sha':p['merge_commit_sha']}} if path.startswith('/git/ref/pull/') else p, post=lambda target,payload:print(payload['head_sha'],payload['name'],payload['conclusion']))\nexcept ValueError:\n pass\n` +
       `print('no status') if p['merge_commit_sha'] != env['EVENT_SHA'] else None`;
     t.is(runPython(code), expected);
   }
@@ -101,7 +102,7 @@ test('fork and Dependabot have the same context but no privileged validation', (
       `import json, node_candidate_gate as g\np=json.loads(${JSON.stringify(JSON.stringify(pr(sha, head)))})\n` +
       `print(g.pr_decision(p,'${sha}','${head}','${author}','skipped','')[0])\n` +
       `try:\n g.pr_decision(p,'${sha}','${head}','${author}','success','${sha}')\nexcept ValueError:\n print('rejected')`;
-    t.is(runPython(code), 'success\nrejected');
+    t.is(runPython(code), 'skipped\nrejected');
   }
 });
 
@@ -115,7 +116,7 @@ def api(path,token):
  return [p]*100 if path.endswith('&page=1') else [dict(p,number=43)]
 print(len(g.candidates(env,api)))
 print(len(pages))
-env.update(GITHUB_EVENT_NAME='pull_request_target',PR_NUMBER='42')
+env.update(GITHUB_EVENT_NAME='pull_request',PR_NUMBER='42')
 print(g.candidates(env,lambda *a:p))
 print(g.candidates(env,lambda *a:dict(p,state='closed')))
 `;
@@ -165,14 +166,17 @@ for ready in [True,None]:
   t.is(runPython(code), 'rejected\nrejected');
 });
 
-test('PR status publication is separate from reusable release validation', (t) => {
+test('PR check publication is separate from reusable release validation', (t) => {
   const read = (name) => fs.readFileSync(path.join(root, '.github/workflows', name), 'utf8');
   const candidate = read('node-candidate-e2e.yml');
   const release = read('server-sdk-e2e.yml');
-  t.true(candidate.includes('pull_request_target:'));
+  t.true(candidate.includes('pull_request:'));
+  t.false(candidate.includes('pull_request_target:'));
   t.true(candidate.includes('push:'));
   t.true(candidate.includes('branches: [master]'));
   t.true(candidate.includes('name: Validate PR candidate'));
+  t.true(candidate.includes('checks: write'));
+  t.false(candidate.includes('statuses: write'));
   t.false(candidate.includes('name: Node Candidate E2E'));
   t.true(candidate.includes('pr-number: ${{ matrix.candidate.number }}'));
   t.true(candidate.includes('merge-sha: ${{ steps.candidate.outputs.sha }}'));
@@ -183,7 +187,76 @@ test('PR status publication is separate from reusable release validation', (t) =
   t.true(candidate.includes("if: always() && steps.candidate.outputs.sha != ''"));
   t.false(/npm publish|npm ci|ref:.*head|ref:.*merge|suite: full/.test(candidate));
   t.false(release.includes('statuses: write'));
+  t.false(release.includes('checks: write'));
   t.false(release.includes('pull_request:'));
+});
+
+test('forks and Dependabot cannot reach checkout or token creation, including maintainer reruns', (t) => {
+  const workflow = fs.readFileSync(
+    path.join(root, '.github/workflows/node-candidate-e2e.yml'),
+    'utf8',
+  );
+  const excluded = workflow.split('  excluded:')[1].split('  candidates:')[0];
+  const selection = workflow.split('  candidates:')[1].split('  validate:')[0];
+  const excludedGuard = excluded.match(/ {4}if: >-\n([\s\S]*?) {4}runs-on:/)[1];
+  const selectionGuard = selection.match(/ {4}if: >-\n([\s\S]*?) {4}runs-on:/)[1];
+  const excludedName = excluded.match(/\$\{\{([\s\S]*?)\}\}/)[1];
+  const context = (head, author, actor = author) => ({
+    github: {
+      repository: rootRepo,
+      event_name: 'pull_request',
+      actor,
+      event: { pull_request: { head: { repo: { full_name: head } }, user: { login: author } } },
+    },
+  });
+  for (const [head, author, actor, eligible, isExcluded] of [
+    [rootRepo, 'maintainer', 'maintainer', true, false],
+    [rootRepo, 'release-bot', 'release-bot', true, false],
+    ['fork/node', 'contributor', 'contributor', false, true],
+    ['fork/node', 'contributor', 'maintainer', false, true],
+    [rootRepo, 'dependabot[bot]', 'dependabot[bot]', false, true],
+    [rootRepo, 'dependabot[bot]', 'maintainer', false, true],
+    [rootRepo, 'maintainer', 'dependabot[bot]', false, false],
+  ]) {
+    const githubContext = context(head, author, actor);
+    t.is(runInNewContext(selectionGuard, githubContext), eligible);
+    t.is(runInNewContext(excludedGuard, githubContext), isExcluded);
+    t.is(
+      runInNewContext(excludedName, githubContext),
+      isExcluded ? 'Node Candidate E2E' : 'Report excluded PRs',
+    );
+  }
+  const pushContext = context(rootRepo, 'maintainer');
+  pushContext.github.event_name = 'push';
+  pushContext.github.event = {};
+  t.true(runInNewContext(selectionGuard, pushContext));
+  t.false(runInNewContext(excludedGuard, pushContext));
+  t.is(runInNewContext(excludedName, pushContext), 'Report excluded PRs');
+  t.true(excluded.includes('permissions: {}'));
+  t.false(/checkout|secrets\.|github.token|GH_TOKEN|uses:/.test(excluded));
+  t.true(workflow.includes('needs: candidates'));
+});
+
+test('the check API reports exact merge commits and explicit exclusions without commit statuses', (t) => {
+  const code = `import json, node_candidate_gate as g
+from unittest.mock import patch
+p={'number':42,'state':'open','base':{'ref':'master'},'merge_commit_sha':'${sha}','head':{'repo':{'full_name':'fork/node'}}}
+env={'PR_NUMBER':'42','EVENT_SHA':'${sha}','GITHUB_REPOSITORY':g.REPOSITORY,'GH_TOKEN':'test','HEAD_REPO':'fork/node','PR_AUTHOR':'contributor','VALIDATION_RESULT':'skipped','VALIDATED_SHA':'','VALIDATION_RUN':'','GITHUB_SERVER_URL':'https://github.com'}
+def api(path,token):
+ return {'object':{'type':'commit','sha':p['merge_commit_sha']}} if path.startswith('/git/ref/pull/') else p
+with patch.object(g,'urlopen') as send:
+ g.pr_gate(env,api=api)
+ request=send.call_args.args[0]
+ print(request.method,request.full_url)
+ payload=json.loads(request.data)
+ print(payload['name'],payload['head_sha'],payload['status'],payload['conclusion'])
+ print('intentionally skipped' in payload['output']['summary'])
+ print('context' in payload or 'state' in payload)
+`;
+  t.is(
+    runPython(code),
+    `POST https://api.github.com/repos/${rootRepo}/check-runs\nNode Candidate E2E ${sha} completed skipped\nTrue\nFalse`,
+  );
 });
 
 test('missing synthetic ref waits; invalid ref types cannot approve a candidate', (t) => {

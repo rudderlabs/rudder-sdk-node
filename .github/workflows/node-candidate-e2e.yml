@@ -1,7 +1,7 @@
 name: Node PR candidate E2E
 
 on:
-  pull_request_target:
+  pull_request:
     branches: [master]
     types: [opened, reopened, synchronize, ready_for_review, edited]
   push:
@@ -10,8 +10,34 @@ on:
 permissions: {}
 
 jobs:
+  excluded:
+    # Eligible PRs must not receive a skipped fallback check on their head SHA.
+    # Their required check is published only for the validated merge SHA.
+    name: >-
+      ${{ github.event_name == 'pull_request' &&
+          (github.event.pull_request.head.repo.full_name != github.repository ||
+           github.event.pull_request.user.login == 'dependabot[bot]') &&
+          'Node Candidate E2E' || 'Report excluded PRs' }}
+    if: >-
+      github.event_name == 'pull_request' &&
+      (github.event.pull_request.head.repo.full_name != github.repository ||
+       github.event.pull_request.user.login == 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Report intentional exclusion
+        run: |
+          echo 'Central E2E validation is excluded for fork and Dependabot PRs. Native tests still apply.' >> "$GITHUB_STEP_SUMMARY"
+
   candidates:
     name: Select open PRs
+    if: >-
+      github.repository == 'rudderlabs/rudder-sdk-node' &&
+      (github.event_name != 'pull_request' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login != 'dependabot[bot]' &&
+        github.actor != 'dependabot[bot]'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -23,10 +49,9 @@ jobs:
       - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
-      - name: Checkout trusted gate code
+      - name: Checkout gate code from this event
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: master
           persist-credentials: false
       - name: Select event PR or all open PRs after a base update
         id: select
@@ -44,7 +69,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      statuses: write
+      checks: write
     strategy:
       fail-fast: false
       max-parallel: 4
@@ -54,10 +79,9 @@ jobs:
       - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
-      - name: Checkout trusted gate code
+      - name: Checkout gate code from this event
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: master
           persist-credentials: false
       - name: Select current merge candidate
         id: candidate
@@ -94,7 +118,7 @@ jobs:
           VALIDATION_RUN: ${{ steps.e2e.outputs.run-id }}
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/node_candidate_gate.py completed
-      - name: Publish candidate status
+      - name: Publish candidate check
         if: always() && steps.candidate.outputs.sha != ''
         env:
           PR_NUMBER: ${{ matrix.candidate.number }}
