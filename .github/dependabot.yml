@@ -3,14 +3,19 @@ updates:
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
-      interval: 'monthly'
+      interval: 'weekly'
     cooldown:
       default-days: 7
+      exclude:
+        - 'rudderlabs/*'
     labels:
       - 'dependencies'
       - 'github_actions'
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 10
     groups:
+      actions-security:
+        applies-to: security-updates
+        patterns: ['*']
       github-actions-version-non-major:
         applies-to: 'version-updates'
         patterns:
@@ -29,13 +34,19 @@ updates:
   - package-ecosystem: 'npm'
     directory: '/'
     schedule:
-      interval: 'monthly'
+      interval: 'weekly'
     cooldown:
       default-days: 7
+      exclude:
+        - '@rudderlabs/*'
+        - '@rudderstack/*'
     labels:
       - 'dependencies'
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 10
     groups:
+      npm-security:
+        applies-to: security-updates
+        patterns: ['*']
       npm-development-non-major:
         applies-to: 'version-updates'
         dependency-type: 'development'
@@ -73,13 +84,19 @@ updates:
   - package-ecosystem: 'npm'
     directory: '/examples/async-flush'
     schedule:
-      interval: 'monthly'
+      interval: 'weekly'
     cooldown:
       default-days: 7
+      exclude:
+        - '@rudderlabs/*'
+        - '@rudderstack/*'
     labels:
       - 'dependencies'
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 10
     groups:
+      npm-security:
+        applies-to: security-updates
+        patterns: ['*']
       npm-development-non-major:
         applies-to: 'version-updates'
         dependency-type: 'development'
@@ -117,13 +134,19 @@ updates:
   - package-ecosystem: 'npm'
     directory: '/examples/custom-axios'
     schedule:
-      interval: 'monthly'
+      interval: 'weekly'
     cooldown:
       default-days: 7
+      exclude:
+        - '@rudderlabs/*'
+        - '@rudderstack/*'
     labels:
       - 'dependencies'
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 10
     groups:
+      npm-security:
+        applies-to: security-updates
+        patterns: ['*']
       npm-development-non-major:
         applies-to: 'version-updates'
         dependency-type: 'development'
@@ -161,13 +184,19 @@ updates:
   - package-ecosystem: 'npm'
     directory: '/examples/sample-app'
     schedule:
-      interval: 'monthly'
+      interval: 'weekly'
     cooldown:
       default-days: 7
+      exclude:
+        - '@rudderlabs/*'
+        - '@rudderstack/*'
     labels:
       - 'dependencies'
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 10
     groups:
+      npm-security:
+        applies-to: security-updates
+        patterns: ['*']
       npm-development-non-major:
         applies-to: 'version-updates'
         dependency-type: 'development'

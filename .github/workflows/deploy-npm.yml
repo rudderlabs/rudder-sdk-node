@@ -1,68 +1,196 @@
 name: Deploy to NPM
 
 on:
-  workflow_dispatch:
   release:
-    types:
-      - published
+    types: [published]
 
-permissions:
-  id-token: write # allows the JWT to be requested from GitHub's OIDC provider
-  contents: read # This is required for actions/checkout
+permissions: {}
+
+concurrency:
+  group: node-npm-publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  validate-ref:
+    name: Require exact release commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - name: Checkout trusted gate implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          path: gate
+          persist-credentials: false
+      - name: Checkout release source as data
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          path: source
+          persist-credentials: false
+      - name: Check the tag, commit, master head, and version
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_DRAFT: ${{ github.event.release.draft }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          python3 gate/scripts/node_candidate_gate.py release source
+          test "$(git -C gate rev-parse HEAD)" = "$(git -C source rev-parse HEAD)"
+          test -f source/.github/workflows/published-sdk-e2e.yml
+          test -f source/.github/workflows/server-sdk-e2e.yml
+
   sdk-e2e:
-    # Validate the exact release-event commit before npm publication.
-    if: (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') && github.event.release.prerelease != true
+    needs: validate-ref
+    # This trusted full result is a hard publication dependency, not a parallel push check.
+    # A reusable workflow's github.sha on release events can be a tag object;
+    # use the peeled, verified commit explicitly for central candidate selection.
+    permissions:
+      contents: read
     uses: ./.github/workflows/server-sdk-e2e.yml
+    with:
+      suite: full
+      candidate-sha: ${{ needs.validate-ref.outputs.sha }}
     secrets:
       RELEASE_PRIVATE_KEY: ${{ secrets.RELEASE_PRIVATE_KEY }}
 
   deploy-tag:
     name: Deploy to NPM
-    needs: sdk-e2e
+    needs: [validate-ref, sdk-e2e]
+    outputs:
+      version: ${{ needs.validate-ref.outputs.version }}
     runs-on: ubuntu-latest
-    # Skip prereleases so they never publish to npm's default `latest` dist-tag.
-    if: (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') && github.event.release.prerelease != true
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing OIDC, only after full E2E.
+    # Trusted npm OIDC publisher for this repo; configure only for release tags.
+    environment: npm-publish
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
-      - name: Checkout source branch
+      - name: Checkout trusted gate implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          path: gate
+          persist-credentials: false
+      - name: Checkout the validated release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate-ref.outputs.sha }}
+          path: source
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version-file: '.nvmrc'
-          cache: 'npm'
+          node-version-file: 'source/.nvmrc'
+          package-manager-cache: false # Never restore PR-writable caches into a release build.
 
-      - name: Build files
+      - name: Recheck identity after full E2E
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_DRAFT: ${{ github.event.release.draft }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          VALIDATED_SHA: ${{ needs.validate-ref.outputs.sha }}
+          VALIDATED_VERSION: ${{ needs.validate-ref.outputs.version }}
+        run: |
+          python3 gate/scripts/node_candidate_gate.py release source
+          test "$(git -C gate rev-parse HEAD)" = "$VALIDATED_SHA"
+          test "$(git -C source rev-parse HEAD)" = "$VALIDATED_SHA"
+          test "$(node -p 'require("./source/package.json").version')" = "$VALIDATED_VERSION"
+
+      - name: Build and pack once; record commit and artifact digest
+        id: packed
         env:
           HUSKY: 0
+          VALIDATED_SHA: ${{ needs.validate-ref.outputs.sha }}
+          VALIDATED_VERSION: ${{ needs.validate-ref.outputs.version }}
         run: |
-          npm ci
-          npm run package
+          npm --prefix source ci
+          npm --prefix source run package
+          mkdir -p "$RUNNER_TEMP/npm-release"
+          pack=$(npm pack --json --ignore-scripts --pack-destination "$RUNNER_TEMP/npm-release" ./source/dist)
+          tarball=$(python3 gate/scripts/node_candidate_gate.py pack-file "$RUNNER_TEMP/npm-release" "$pack")
+          digest=$(python3 gate/scripts/node_candidate_gate.py artifact "$tarball" "$VALIDATED_VERSION")
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Validated source commit: $VALIDATED_SHA; npm artifact SHA-256: $digest" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Publish package to NPM
+      - name: Publish the exact packed file
         env:
           HUSKY: 0
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_DRAFT: ${{ github.event.release.draft }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          VALIDATED_SHA: ${{ needs.validate-ref.outputs.sha }}
+          VALIDATED_VERSION: ${{ needs.validate-ref.outputs.version }}
+          TARBALL: ${{ steps.packed.outputs.tarball }}
+          DIGEST: ${{ steps.packed.outputs.digest }}
         run: |
-          cd dist
-          npm publish
+          python3 gate/scripts/node_candidate_gate.py release source
+          test "$(git -C gate rev-parse HEAD)" = "$VALIDATED_SHA"
+          test "$(git -C source rev-parse HEAD)" = "$VALIDATED_SHA"
+          python3 gate/scripts/node_candidate_gate.py artifact "$TARBALL" "$VALIDATED_VERSION" "$DIGEST"
+          npm publish --ignore-scripts "$TARBALL"
 
-      - name: Get new version number
+  published-e2e:
+    name: Accept exact published package
+    needs: deploy-tag
+    permissions:
+      contents: read
+    # The release tag must contain this workflow; reject older tags before publication.
+    uses: ./.github/workflows/published-sdk-e2e.yml
+    with:
+      package-version: ${{ needs.deploy-tag.outputs.version }}
+    secrets:
+      RELEASE_PRIVATE_KEY: ${{ secrets.RELEASE_PRIVATE_KEY }}
+
+  notify-slack:
+    name: Report npm release acceptance
+    if: ${{ always() && needs.deploy-tag.result == 'success' }}
+    needs: [deploy-tag, published-e2e]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CURRENT_VERSION_VALUE: ${{ needs.deploy-tag.outputs.version }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - name: Record publication and acceptance separately
+        env:
+          ACCEPTANCE_RESULT: ${{ needs.published-e2e.result }}
         run: |
-          current_version=$(jq -r .version package.json)
-          echo "CURRENT_VERSION_VALUE=$current_version" >> $GITHUB_ENV
-          echo "DATE=$(date)" >> $GITHUB_ENV
+          echo "npm publication succeeded. Published-package E2E: $ACCEPTANCE_RESULT." >> "$GITHUB_STEP_SUMMARY"
+          echo 'The package remains published if acceptance fails. Retry published-sdk-e2e.yml at the same release tag.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Set notification date
+        if: needs.published-e2e.result == 'success'
+        run: echo "DATE=$(date)" >> "$GITHUB_ENV"
 
       - name: Send message to Slack channel
+        if: needs.published-e2e.result == 'success'
         id: slack
         continue-on-error: true
-        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d  # v4.0.0
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         env:
           PROJECT_NAME: 'Node.js SDK'
           NPM_PACKAGE_URL: 'https://www.npmjs.com/package/@rudderstack/rudder-sdk-node'

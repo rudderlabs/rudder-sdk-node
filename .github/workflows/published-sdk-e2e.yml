@@ -1,0 +1,81 @@
+name: Published Node SDK E2E
+
+on:
+  workflow_call:
+    inputs:
+      package-version:
+        description: Exact version validated by the publisher
+        required: true
+        type: string
+    secrets:
+      RELEASE_PRIVATE_KEY:
+        required: true
+  # Retry validation at an existing release tag. This workflow cannot publish.
+  workflow_dispatch:
+
+permissions: {}
+
+# Do not cancel live validation; the central workflow owns locking and cleanup.
+concurrency:
+  group: node-published-e2e-${{ github.ref }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 55
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - name: Require an exact release tag
+        id: release
+        env:
+          PACKAGE_VERSION: ${{ inputs.package-version || github.ref_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" != release && "$GITHUB_EVENT_NAME" != workflow_dispatch ]]; then
+            echo 'Published validation only accepts release events or manual retries.' >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_TYPE" != tag || "$GITHUB_REF" != "refs/tags/$RELEASE_TAG" ]] ||
+             [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+             [[ "${PACKAGE_VERSION#v}" != "${RELEASE_TAG#v}" ]]; then
+            echo 'Select the existing stable release tag that matches the exact package version.' >&2
+            exit 1
+          fi
+          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+      - name: Checkout release tag for source identity
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: false
+      - name: Check source commit against selected tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          commit=$(git rev-parse HEAD)
+          remote=$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}")
+          peeled=$(printf '%s\n' "$remote" | awk '$2 ~ /\^\{\}$/ { print $1 }')
+          tagged=$(printf '%s\n' "$remote" | awk -v tag="refs/tags/$RELEASE_TAG" '$2 == tag { print $1 }')
+          test -n "$tagged" && test "$commit" = "${peeled:-$tagged}"
+      - name: Create a central validation token
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PRIVATE_KEY }}
+          owner: rudderlabs
+          repositories: rudder-sdk-e2e-tests
+          permission-actions: write
+      - name: Validate the exact public package, delivery, and cleanup
+        # PR #502 replacement: resolve a reviewed published-mode pin before rollout.
+        uses: rudderlabs/github-action-sdk-e2e@855d3e174e917aab71b93a862c7e74592904d10e # published mode; review placeholder
+        with:
+          token: ${{ steps.token.outputs.token }}
+          package-version: ${{ steps.release.outputs.version }}
+          suite: full
