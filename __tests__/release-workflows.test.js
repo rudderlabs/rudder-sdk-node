@@ -170,29 +170,6 @@ for (const overrides of [{ ROOT_OK: 'false' }, { ROOT_TS: '' }, { ROOT_TS: 'inva
   });
 }
 
-for (const [event, refType, tag, version, accepted] of [
-  ['release', 'tag', 'v3.0.17', '3.0.17', true],
-  ['workflow_dispatch', 'tag', 'v3.0.17', 'v3.0.17', true],
-  ['pull_request', 'tag', 'v3.0.17', '3.0.17', false],
-  ['workflow_dispatch', 'branch', 'master', '3.0.17', false],
-  ['release', 'tag', 'v3.0.17', '3.0.18', false],
-  ['release', 'tag', 'v3.0.17', 'latest', false],
-  ['release', 'tag', 'v3.0.17-beta.1', '3.0.17-beta.1', false],
-  ['release', 'tag', 'v03.0.17', '03.0.17', false],
-  ['release', 'tag', 'v3.0.17', '3.0.17; exit 0', false],
-]) {
-  test(`exact published selector: ${event}/${refType}/${tag}/${version}`, (t) => {
-    const env = fixture(t, {
-      GITHUB_EVENT_NAME: event,
-      GITHUB_REF_TYPE: refType,
-      RELEASE_TAG: tag,
-      PACKAGE_VERSION: version,
-    });
-    const result = execute(published, 'Require an exact release tag', env);
-    t.is(result.status === 0, accepted, result.stderr);
-  });
-}
-
 test('publication and notification preserve the full acceptance dependency chain', (t) => {
   const candidate = deploy.split('\n  sdk-e2e:\n')[1].split('\n  deploy-tag:\n')[0];
   const publisher = deploy.split('\n  deploy-tag:\n')[1].split('\n  published-e2e:\n')[0];
@@ -216,16 +193,32 @@ test('publication and notification preserve the full acceptance dependency chain
   );
 });
 
-test('validation-only retries stay silent and narrowly scoped', (t) => {
-  t.false(/npm publish|slack-github-action|id-token: write/.test(published));
-  t.true(published.includes('suite: full'));
-  t.true(published.includes('repositories: rudder-sdk-e2e-tests'));
-  t.true(published.includes('permission-actions: write'));
+test('validation-only retries delegate to a pinned shared workflow without publishing', (t) => {
+  t.false(/npm publish|slack-github-action|id-token: write|actions\/checkout/.test(published));
+  t.true(
+    published.includes(
+      'uses: rudderlabs/github-action-sdk-e2e/.github/workflows/published-sdk-e2e.yml@d49721d3b1ab5e53e6d1b6e1f6919556bb5d398a',
+    ),
+  );
+  t.true(published.includes('package-version: ${{ inputs.package-version || github.ref_name }}'));
+  t.true(published.includes('release-app-client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}'));
   t.true(published.includes('value: ${{ jobs.validate.outputs.run-url }}'));
-  t.true(published.includes('run-url: ${{ steps.e2e.outputs.run-url }}'));
-  for (const source of [published, workflow('server-sdk-e2e')]) {
-    t.true(source.includes('runs-on: ubuntu-latest'));
-    t.false(source.includes('ubuntu-24.04'));
-    t.false(source.includes('cancel-in-progress: true'));
-  }
+  t.false(published.includes('cancel-in-progress: true'));
 });
+
+for (const [name, overrides, accepted] of [
+  ['confirmed root and reply', { REPLY_OK: 'true' }, true],
+  ['root API failure', { ROOT_OK: 'false', REPLY_OK: 'true' }, false],
+  ['missing root timestamp', { ROOT_TS: '', REPLY_OK: 'true' }, false],
+  ['thread API failure', { REPLY_OK: 'false' }, false],
+  ['skipped thread', { REPLY_OK: '' }, false],
+]) {
+  test(`notification outcome: ${name}`, (t) => {
+    const env = fixture(t, overrides);
+    const result = execute(deploy, 'Require confirmed release notification', env);
+    t.is(result.status === 0, accepted, result.stderr);
+    if (!accepted) {
+      t.true(fs.readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8').includes('notification failed'));
+    }
+  });
+}

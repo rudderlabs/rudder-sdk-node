@@ -160,6 +160,7 @@ jobs:
         with:
           method: chat.postMessage
           retries: rapid
+          errors: true
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: ${{ steps.message.outputs.payload }}
 
@@ -184,11 +185,25 @@ jobs:
             | sed 's/^/payload=/' >> "$GITHUB_OUTPUT"
 
       - name: Post release details in the thread
+        id: reply
         if: steps.thread.outputs.payload != ''
         continue-on-error: true
         uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.postMessage
           retries: rapid
+          errors: true
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: ${{ steps.thread.outputs.payload }}
+
+      - name: Require confirmed release notification
+        if: always()
+        env:
+          ROOT_OK: ${{ steps.root.outputs.ok }}
+          ROOT_TS: ${{ steps.root.outputs.ts }}
+          REPLY_OK: ${{ steps.reply.outputs.ok }}
+        run: |
+          if [[ "$ROOT_OK" != true || ! "$ROOT_TS" =~ ^[0-9]+\.[0-9]+$ || "$REPLY_OK" != true ]]; then
+            echo 'Release notification failed or was not confirmed. Publication and E2E results remain recorded above.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
