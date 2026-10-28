@@ -58,7 +58,8 @@ type apiCallback = () => void;
 type FlushCallback = (error?: Error, data?: any) => void;
 
 type IdentityOptions =
-  { userId: string; anonymousId?: string } | { userId?: string; anonymousId: string };
+  | { userId: string; anonymousId?: string }
+  | { userId?: string; anonymousId: string };
 
 type IdentifyParams = {
   context?: apiObject;
@@ -298,8 +299,8 @@ declare namespace Analytics {
     TrackParams,
     GroupParams,
     ScreenParams,
-    AliasParams,
-  };
+    AliasParams
+  }
 }
 
 export = Analytics;

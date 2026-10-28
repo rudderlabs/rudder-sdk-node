@@ -200,7 +200,8 @@ Deno.test('configured request timeouts reach the event callback', async () => {
     const callback = callbackResult((done) =>
       client.track({ event: 'Timeout failure', userId: 'user-1' }, done),
     );
-    await assert.rejects(client.flush(), /timeout of 20ms exceeded/);
+    // flush() resolves; the failure reaches the event's callback
+    await client.flush();
     const result = await callback;
 
     assert.match(result.error.message, /timeout of 20ms exceeded/);
@@ -243,7 +244,8 @@ Deno.test('connection failures reach callbacks without exposing the write key', 
     callbackResult((done) => client.flush(done)),
   ]);
 
-  for (const { error } of results) {
+  assert.equal(results[1].error, undefined);
+  for (const { error } of results.slice(0, 1)) {
     assert.equal(error.code, 'ECONNREFUSED');
     const dump = `${Deno.inspect(error, { depth: Infinity })}${JSON.stringify(error)}`;
     assert.equal(dump.includes(WRITE_KEY), false);

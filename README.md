@@ -69,15 +69,19 @@ Below parameters are optional and can be passed during SDK initialization.
 | `path`                 | String   | `/v1/batch`                     | Path to batch endpoint.                                                                           |
 | `flushAt`              | Number   | 20                              | The number of events to be flushed when reached this limit.                                       |
 | `flushInterval`        | Number   | 10000                           | The maximum timespan (in milliseconds) after which the events from the in-memory queue is flushed |
-| `maxQueueSize`         | Number   | 460800(500kb)                   | Maximum payload size of a batch request                                                           |
+| `maxQueueSize`         | Number   | 460800(500kb)                   | Maximum size in bytes (UTF-8, including the batch envelope) of a batch request body               |
 | `maxInternalQueueSize` | Number   | 20000                           | The maximum length of the in-memory queue                                                         |
 | `logLevel`             | String   | 'info'                          | Log level. `Ex: 'debug', 'error'`                                                                 |
 | `axiosConfig`          | Object   | N/A                             | Axios config                                                                                      |
 | `axiosInstance`        | Object   | N/A                             | Axios instance                                                                                    |
 | `axiosRetryConfig`     | Object   | N/A                             | Axios retry configuration                                                                         |
 | `retryCount`           | Number   | 3                               | Number of times requests will be retried by axios if failed                                       |
-| `errorHandler`         | Function | N/A                             | A function that will be called if request to server failed                                        |
+| `errorHandler`         | Function | N/A                             | Called when a server request or persistent-queue add fails; without it, the latter is only logged |
 | `gzip`                 | Boolean  | true                            | Whether to compress request with gzip or not                                                      |
+
+Retry hooks in `axiosRetryConfig` receive credential-redacted error and request snapshots.
+The snapshots omit authentication and raw request objects. Changes to snapshot fields do not
+change the live retry request. Retry decisions, delays, and asynchronous hook results still apply.
 
 ## Supported calls
 

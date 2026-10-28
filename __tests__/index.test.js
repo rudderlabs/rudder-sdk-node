@@ -1,4 +1,4 @@
-/* eslint-disable unicorn/filename-case */
+/* eslint-disable unicorn/filename-case -- `__tests__` is the test directory */
 // import bodyParser from 'body-parser';
 const express = require('express');
 const auth = require('basic-auth');
@@ -382,6 +382,7 @@ test("flush - don't fail when queue is empty", async (t) => {
 
 test('flush - send messages', async (t) => {
   const client = await createClient({ flushAt: 2, gzip: false });
+  const post = Sinon.spy(client.axiosInstance, 'post');
 
   const callbackA = spy();
   const callbackB = spy();
@@ -402,19 +403,23 @@ test('flush - send messages', async (t) => {
     },
   ];
 
+  // every queued message is sent, in batches of flushAt; resolves with the last batch
   const data = await client.flush();
+  t.deepEqual(
+    post.getCalls().map((call) => call.args[1].batch),
+    [['a', 'b'], ['c']],
+  );
   t.deepEqual(Object.keys(data), ['batch', 'timestamp', 'sentAt']);
-  t.deepEqual(data.batch, ['a', 'b']);
+  t.deepEqual(data.batch, ['c']);
   t.true(data.timestamp instanceof Date);
   t.true(data.sentAt instanceof Date);
-  setImmediate(() => {
-    t.true(callbackA.calledOnce);
-    t.true(callbackB.calledOnce);
-    t.false(callbackC.called);
-  });
+  t.is(client.queue.length, 0);
+  t.true(callbackA.calledOnce);
+  t.true(callbackB.calledOnce);
+  t.true(callbackC.calledOnce);
 });
 
-test.skip('flush - respond with an error', async (t) => {
+test('flush - respond with an error', async (t) => {
   const client = await createClient({ path: '/v1/dummy' });
   const callback = spy();
 
@@ -425,8 +430,9 @@ test.skip('flush - respond with an error', async (t) => {
     },
   ];
 
-  const error = await t.throwsAsync(client.flush(), { instanceOf: AssertionError });
-  t.is(error.message, 'Not Found');
+  t.is(await client.flush(), undefined);
+  await setTimeout(5);
+  t.is(callback.firstCall.firstArg.message, 'Not Found');
 });
 
 test.skip('flush - do not throw on axios failure if errorHandler option is specified', async (t) => {
@@ -505,6 +511,50 @@ test('flush - redact the write key from transport errors without changing their 
   }
 });
 
+for (const path of ['/missing', '/v1/batch']) {
+  test(`flush - redact HTTP errors and retry hook snapshots at ${path}`, async (t) => {
+    const snapshots = [];
+    const errorHandler = spy();
+    const client = createUnreachableClient({
+      dataPlaneUrl: `http://127.0.0.1:${port}`,
+      path,
+      gzip: false,
+      retryCount: 1,
+      errorHandler,
+      axiosRetryConfig: {
+        retryDelay: (count, error) => {
+          snapshots.push(error);
+          return 0;
+        },
+        onRetry: (count, error, config) => {
+          snapshots.push(error, config);
+          t.is(config.auth, undefined);
+        },
+        onMaxRetryTimesExceeded: (error) => snapshots.push(error),
+        validateResponse: (response) => {
+          snapshots.push(response);
+          return false;
+        },
+      },
+    });
+    client.flushed = true;
+    const callback = spy();
+    client.queue = [{ message: 'axios-retry-forever', callback }];
+    await client.flush();
+    await setTimeout(5);
+    const error = errorHandler.firstCall.firstArg;
+    t.is(error.response.status, path === '/missing' ? 404 : 503);
+    t.is(callback.firstCall.firstArg, error);
+    t.true(snapshots.length >= (path === '/missing' ? 1 : 5));
+    const token = Buffer.from(`${unreachableWriteKey}:`).toString('base64');
+    for (const value of [...snapshots, error, error.response]) {
+      const output = `${inspect(value, { depth: Infinity })}${JSON.stringify(value)}`;
+      t.false(output.includes(unreachableWriteKey));
+      t.false(output.includes(token));
+    }
+  });
+}
+
 test('flush - failures of unawaited flushes do not cause unhandled rejections', async (t) => {
   const unhandled = recordUnhandledRejections();
   try {
@@ -518,7 +568,7 @@ test('flush - failures of unawaited flushes do not cause unhandled rejections', 
     });
     await setTimeout(20);
 
-    t.is(flushError.code, 'ECONNREFUSED');
+    t.is(flushError, undefined);
     t.is(eventCallback.firstCall.firstArg.code, 'ECONNREFUSED');
     t.deepEqual(unhandled.rejections, []);
   } finally {
@@ -526,12 +576,15 @@ test('flush - failures of unawaited flushes do not cause unhandled rejections', 
   }
 });
 
-test('flush - awaited flush still rejects without an errorHandler', async (t) => {
+test('flush - awaited flush reports failures through event callbacks', async (t) => {
   const client = createUnreachableClient();
   client.flushed = true;
-  client.track({ event: 'unreachable', userId: 'user-1' });
+  const callback = spy();
+  client.track({ event: 'unreachable', userId: 'user-1' }, callback);
 
-  await t.throwsAsync(client.flush(), { code: 'ECONNREFUSED' });
+  t.is(await client.flush(), undefined);
+  await setTimeout(5);
+  t.is(callback.firstCall.firstArg.code, 'ECONNREFUSED');
 });
 
 test('flush - persistent queue push failure requeues events without an unhandled rejection', async (t) => {
@@ -554,8 +607,8 @@ test('flush - persistent queue push failure requeues events without an unhandled
   }
 });
 
-test.skip('flush - time out if configured', async (t) => {
-  const client = await createClient({ timeout: 50 });
+test('flush - time out if configured', async (t) => {
+  const client = await createClient({ timeout: 50, retryCount: 0 });
   const callback = spy();
 
   client.queue = [
@@ -565,8 +618,9 @@ test.skip('flush - time out if configured', async (t) => {
     },
   ];
 
-  const error = await t.throwsAsync(client.flush(), { instanceOf: AssertionError });
-  t.is(error.message, 'timeout of 50ms exceeded');
+  t.is(await client.flush(), undefined);
+  await setTimeout(5);
+  t.is(callback.firstCall.firstArg.message, 'timeout of 50ms exceeded');
 });
 
 test('flush - skip when client is disabled', async (t) => {
@@ -615,6 +669,530 @@ test('flush - wont flush when no flush condition has meet', async (t) => {
   }
 
   t.false(client.flush.called);
+});
+
+const utf8Bytes = (value) => Buffer.byteLength(JSON.stringify(value), 'utf8');
+
+test('enqueue - keeps a running byte total of the queue', async (t) => {
+  const client = await createClient({ flushAt: 1000 });
+
+  client.enqueue('track', { event: 'a', userId: 'user-1' }, noop);
+  client.enqueue('track', { event: 'é', userId: 'user-2' }, noop);
+
+  // each event as sent: its JSON, the `,"sentAt":...` flush() adds, and a separating comma
+  const sentAtBytes = Buffer.byteLength(`,"sentAt":${JSON.stringify(new Date(0))}`) + 1;
+  const expectedBytes = client.queue.reduce(
+    (acc, item) => acc + utf8Bytes(item.message) + sentAtBytes,
+    0,
+  );
+  t.is(client.queueBytes, expectedBytes);
+
+  await client.flush();
+
+  t.is(client.queue.length, 0);
+  t.is(client.queueBytes, 0);
+});
+
+test('enqueue - does not re-serialize the queued items', async (t) => {
+  const client = await createClient({ flushAt: 1000 });
+  for (let i = 0; i < 200; i += 1) {
+    client.enqueue('track', { event: 'event', userId: `user-${i}` }, noop);
+  }
+
+  const stringify = Sinon.spy(JSON, 'stringify');
+  try {
+    client.enqueue('track', { event: 'event', userId: 'user-last' }, noop);
+    t.true(stringify.callCount < 5);
+  } finally {
+    stringify.restore();
+  }
+});
+
+test('flush - sends every queued event in batches of at most maxQueueSize bytes', async (t) => {
+  const client = await createClient({ flushAt: 1000, maxQueueSize: 1000 });
+  const post = Sinon.spy(client.axiosInstance, 'post');
+  const callbacks = Array.from({ length: 10 }, () => spy());
+  client.queue = callbacks.map((callback, i) => ({
+    message: { event: 'e'.repeat(200), index: i },
+    callback,
+  }));
+
+  await client.flush();
+  await setTimeout(5); // event callbacks run on setImmediate
+
+  const batches = post.getCalls().map((call) => call.args[1]);
+  t.true(batches.length > 1);
+  t.true(batches.every((data) => utf8Bytes(data) <= 1000));
+  // each batch is as large as the limit allows: the next event would not have fit
+  const [first, second] = batches;
+  const withNext = { ...first, batch: [...first.batch, second.batch[0]] };
+  t.true(utf8Bytes(withNext) > 1000);
+  t.is(
+    batches.reduce((acc, data) => acc + data.batch.length, 0),
+    10,
+  );
+  t.is(client.queue.length, 0);
+  t.true(callbacks.every((callback) => callback.calledOnce));
+});
+
+test('flush - counts multi-byte characters as UTF-8 bytes', async (t) => {
+  const client = await createClient({ flushAt: 1000, maxQueueSize: 1000 });
+  const post = Sinon.spy(client.axiosInstance, 'post');
+  client.queue = Array.from({ length: 10 }, (_, i) => ({
+    // 100 characters, 300 UTF-8 bytes
+    message: { event: '日本'.repeat(50), index: i },
+    callback: noop,
+  }));
+
+  await client.flush();
+
+  t.true(post.getCalls().every((call) => utf8Bytes(call.args[1]) <= 1000));
+});
+
+test('flush - stops at the events queued when it was called', async (t) => {
+  const client = await createClient({ flushAt: 1, flushInterval: 10000 });
+  const lateEvent = { message: 'late', callback: noop };
+  const post = Sinon.stub(client.axiosInstance, 'post').callsFake(async () => {
+    // keeps adding events while flush() runs; it must still settle
+    client.queue.push(lateEvent);
+  });
+  client.queue = [
+    { message: 'a', callback: noop },
+    { message: 'b', callback: noop },
+  ];
+
+  await client.flush();
+
+  t.deepEqual(
+    post.getCalls().map((call) => call.args[1].batch),
+    [['a'], ['b']],
+  );
+  t.true(client.queue.length > 0);
+  t.true(client.queue.every((item) => item === lateEvent));
+  // the events added meanwhile are left to the flush timer
+  t.truthy(client.flushTimer);
+});
+
+test('flush - waits for another flush that sends its last queued event', async (t) => {
+  const client = await createClient({ flushAt: 1, flushInterval: 10000, retryCount: 0 });
+  const releases = [];
+  let flushSettled = false;
+  const post = Sinon.stub(client.axiosInstance, 'post').callsFake(() => {
+    // eslint-disable-next-line compat/compat
+    return new Promise((resolve) => {
+      releases.push(() => resolve());
+    });
+  });
+  client.queue = [
+    { message: 'first', callback: noop },
+    { message: 'second', callback: noop },
+  ];
+
+  const flushPromise = client.flush();
+  flushPromise.then(
+    () => {
+      flushSettled = true;
+    },
+    () => {},
+  );
+  await setTimeout(0);
+  const overlappingFlushPromise = client.flush();
+  await setTimeout(0);
+
+  t.is(post.callCount, 1);
+  releases[0]();
+  await setTimeout(0);
+  await setTimeout(0);
+
+  t.is(post.callCount, 2);
+  t.false(flushSettled);
+
+  releases[1]();
+  await flushPromise;
+  await overlappingFlushPromise;
+  t.true(flushSettled);
+  t.is(client.queue.length, 0);
+});
+
+test('flush - keeps burst-triggered direct sends single-flight', async (t) => {
+  const client = await createClient({ flushAt: 1, flushInterval: 10000, retryCount: 0 });
+  let activePosts = 0;
+  let peakActivePosts = 0;
+  const post = Sinon.stub(client.axiosInstance, 'post').callsFake(async () => {
+    activePosts += 1;
+    peakActivePosts = Math.max(peakActivePosts, activePosts);
+    await setTimeout(10);
+    activePosts -= 1;
+  });
+  const eventCount = 20;
+
+  for (let index = 0; index < eventCount; index += 1) {
+    client.track({ event: `burst-${index}`, userId: `user-${index}` }, noop);
+  }
+
+  const drainDeadline = Date.now() + 3000;
+  while ((post.callCount < eventCount || activePosts > 0) && Date.now() < drainDeadline) {
+    await setTimeout(5);
+  }
+
+  t.true(
+    post.callCount >= eventCount && activePosts === 0,
+    `timed out waiting for burst drain: post.callCount=${post.callCount}, activePosts=${activePosts}, queue.length=${client.queue.length}`,
+  );
+  t.is(post.callCount, eventCount);
+  t.is(client.queue.length, 0);
+  t.is(peakActivePosts, 1);
+});
+
+// Stubs post() with requests that stay in flight until released, counting the peak in flight.
+const holdPosts = (client) => {
+  const held = [];
+  const stats = { active: 0, peak: 0 };
+  const post = Sinon.stub(client.axiosInstance, 'post').callsFake(
+    () =>
+      // eslint-disable-next-line compat/compat
+      new Promise((resolve) => {
+        stats.active += 1;
+        stats.peak = Math.max(stats.peak, stats.active);
+        held.push(() => {
+          stats.active -= 1;
+          resolve();
+        });
+      }),
+  );
+  const releaseAll = async () => {
+    while (held.length > 0 || stats.active > 0) {
+      held.splice(0).forEach((release) => release());
+      await setTimeout(1);
+    }
+  };
+  return { post, stats, releaseAll };
+};
+
+test('flush - enqueues during an in-flight request do not pile up flushes', async (t) => {
+  const client = await createClient({ flushAt: 1, flushInterval: 10000 });
+  const { post, stats, releaseAll } = holdPosts(client);
+  const drain = Sinon.spy(client, '_drain');
+  const eventCount = 1000;
+
+  for (let index = 0; index < eventCount; index += 1) {
+    client.track({ event: `burst-${index}`, userId: `user-${index}` }, noop);
+  }
+  await setTimeout(5);
+
+  t.is(post.callCount, 1);
+  // the drain in flight, plus one shared by every enqueue that arrived meanwhile
+  t.true(drain.callCount <= 2, `drains started: ${drain.callCount}`);
+
+  await releaseAll();
+
+  t.is(post.callCount, eventCount);
+  t.is(stats.peak, 1);
+  t.true(drain.callCount <= 2, `drains started: ${drain.callCount}`);
+  t.is(client.queue.length, 0);
+});
+
+test('flush - events enqueued during a drain go out without waiting for the flush timer', async (t) => {
+  const client = await createClient({ flushAt: 2, flushInterval: 10000 });
+  const { post, releaseAll } = holdPosts(client);
+  const callbacks = Array.from({ length: 6 }, () => spy());
+
+  client.track({ event: 'a', userId: 'u' }, callbacks[0]);
+  client.track({ event: 'b', userId: 'u' }, callbacks[1]);
+  // a sender pausing on backpressure enqueues nothing more after these
+  callbacks
+    .slice(2)
+    .forEach((callback, i) => client.track({ event: `c${i}`, userId: 'u' }, callback));
+
+  await releaseAll();
+  await setTimeout(5); // event callbacks run on setImmediate
+
+  t.is(post.callCount, 3);
+  t.true(callbacks.every((callback) => callback.calledOnce));
+  t.is(client.queue.length, 0);
+});
+
+test('flush - settles while events keep arriving', async (t) => {
+  const client = await createClient({ flushAt: 1, flushInterval: 10000 });
+  let keepSending = true;
+  let sent = 0;
+  Sinon.stub(client.axiosInstance, 'post').callsFake(async () => {
+    sent += 1;
+    await setTimeout(1);
+    if (keepSending) {
+      client.track({ event: 'more', userId: 'u' }, noop);
+    }
+  });
+  client.queue = [
+    { message: 'a', callback: noop },
+    { message: 'b', callback: noop },
+  ];
+
+  await client.flush();
+  t.true(sent >= 2);
+
+  keepSending = false;
+  await client.flush();
+  t.is(client.queue.length, 0);
+});
+
+test('flush - concurrent flush() calls all settle after their events are sent', async (t) => {
+  const client = await createClient({ flushAt: 1, flushInterval: 10000 });
+  const { post, stats, releaseAll } = holdPosts(client);
+  const settled = [];
+  client.queue = [{ message: 'a', callback: noop }];
+  const first = client.flush().then(() => settled.push('first'));
+  client.queue.push({ message: 'b', callback: noop });
+  const second = client.flush().then(() => settled.push('second'));
+  const third = client.flush().then(() => settled.push('third'));
+  await setTimeout(5);
+
+  t.is(post.callCount, 1);
+  t.deepEqual(settled, []);
+
+  await releaseAll();
+  // eslint-disable-next-line compat/compat
+  await Promise.all([first, second, third]);
+
+  t.deepEqual(
+    post.getCalls().map((call) => call.args[1].batch),
+    [['a'], ['b']],
+  );
+  t.is(stats.peak, 1);
+  t.is(client.queue.length, 0);
+});
+
+test('flush - a flush on an empty queue waits for the drain in flight', async (t) => {
+  const client = await createClient({ flushAt: 1, flushInterval: 10000 });
+  const { releaseAll } = holdPosts(client);
+  let settled = false;
+  client.queue = [{ message: 'a', callback: noop }];
+  const first = client.flush();
+  await setTimeout(1);
+
+  const second = client.flush().then(() => {
+    settled = true;
+  });
+  await setTimeout(5);
+  t.false(settled);
+
+  await releaseAll();
+  // eslint-disable-next-line compat/compat
+  await Promise.all([first, second]);
+  t.true(settled);
+});
+
+test('flush - a flush() overlapping a failed batch resolves once the queue is drained', async (t) => {
+  // `timeout` makes the test server's 404 a real failure (see isDuringTestExecution)
+  const client = await createClient({ flushAt: 1, flushInterval: 10000, timeout: 1000 });
+  const flush = Analytics.prototype.flush.bind(client);
+  const callbackB = spy();
+  const callbackC = spy();
+  client.queue = [
+    { message: 'a', callback: noop },
+    { message: 'error', callback: callbackB },
+  ];
+
+  const first = flush();
+  client.queue.push({ message: 'c', callback: callbackC });
+  const overlapping = flush();
+
+  await t.notThrowsAsync(first);
+  await t.notThrowsAsync(overlapping);
+  await setTimeout(5); // event callbacks run on setImmediate
+  t.true(callbackB.firstCall.args[0] instanceof Error);
+  t.true(callbackC.calledOnce);
+  t.falsy(callbackC.firstCall.args[0]);
+  t.is(client.queue.length, 0);
+});
+
+test('flush - an empty-queue flush() waiting on a failing send resolves', async (t) => {
+  // `timeout` makes the test server's 404 a real failure (see isDuringTestExecution)
+  const client = await createClient({ flushAt: 1, flushInterval: 10000, timeout: 1000 });
+  const flush = Analytics.prototype.flush.bind(client);
+  const callback = spy();
+  client.queue = [{ message: 'error', callback }];
+
+  const first = flush();
+  const waiting = flush();
+
+  await t.notThrowsAsync(first);
+  await t.notThrowsAsync(waiting);
+  await setTimeout(5);
+  t.true(callback.firstCall.args[0] instanceof Error);
+});
+
+test('flush - persistent queue pushes batches one at a time', async (t) => {
+  const client = await createClient({ flushAt: 1, flushInterval: 10000 });
+  const stats = { active: 0, peak: 0 };
+  client.pQueue = {
+    add: async () => {
+      stats.active += 1;
+      stats.peak = Math.max(stats.peak, stats.active);
+      await setTimeout(2);
+      stats.active -= 1;
+    },
+  };
+  client.pQueueInitialized = true;
+  client.queue = ['a', 'b', 'c'].map((message) => ({ message, callback: noop }));
+
+  // eslint-disable-next-line compat/compat
+  await Promise.all([client.flush(), client.flush(), client.flush()]);
+  clearTimeout(client.timer);
+
+  t.is(stats.peak, 1);
+  t.is(client.queue.length, 0);
+});
+
+test('flush - a flush() from inside a send does not start a second request', async (t) => {
+  const client = await createClient({ flushAt: 1, flushInterval: 10000 });
+  const stats = { active: 0, peak: 0 };
+  let reentered = false;
+  Sinon.stub(client.axiosInstance, 'post').callsFake(() => {
+    stats.active += 1;
+    stats.peak = Math.max(stats.peak, stats.active);
+    if (!reentered) {
+      // like a synchronous axios request hook that enqueues and flushes
+      reentered = true;
+      client.queue.push({ message: 'nested', callback: noop });
+      client.flush();
+    }
+    // eslint-disable-next-line compat/compat
+    return new Promise((resolve) => {
+      globalThis.setTimeout(() => {
+        stats.active -= 1;
+        resolve();
+      }, 5);
+    });
+  });
+  client.queue = [{ message: 'a', callback: noop }];
+
+  await client.flush();
+  await setTimeout(30);
+
+  t.is(stats.peak, 1);
+  t.is(client.queue.length, 0);
+});
+
+test('flush - stops when a failed persistent push leaves the batch queued', async (t) => {
+  const client = await createClient({
+    flushAt: 10,
+    flushInterval: 10000,
+    errorHandler: () => {
+      throw new Error('errorHandler failed');
+    },
+  });
+  const add = Sinon.stub().rejects(new Error('redis unavailable'));
+  client.pQueue = { add };
+  client.pQueueInitialized = true;
+  client.queue = [{ message: 'a', callback: noop }];
+
+  await t.notThrowsAsync(Analytics.prototype.flush.call(client));
+  clearTimeout(client.timer);
+  clearTimeout(client.flushTimer);
+
+  t.is(add.callCount, 1);
+  t.is(client.queue.length, 1);
+});
+
+test('flush - re-queues each item when the persistent queue rejects a batch', async (t) => {
+  const errorHandler = spy();
+  const client = await createClient({ flushAt: 10, errorHandler });
+  const callbackA = spy();
+  const callbackB = spy();
+  client.enqueue('track', { event: 'a', userId: 'user-1' }, callbackA);
+  client.enqueue('track', { event: 'b', userId: 'user-2' }, callbackB);
+  const queuedItems = [...client.queue];
+  const queuedBytes = client.queueBytes;
+
+  const redisError = new Error('redis unavailable');
+  client.pQueue = {
+    add: async () => {
+      throw redisError;
+    },
+  };
+  client.pQueueInitialized = true;
+
+  // A rejection left unhandled here would fail the test run.
+  await Analytics.prototype.flush.call(client);
+  await setTimeout(10);
+  clearTimeout(client.timer);
+  clearTimeout(client.flushTimer);
+
+  t.deepEqual(client.queue, queuedItems);
+  t.true(client.queue.every((item, i) => item === queuedItems[i]));
+  t.is(client.queueBytes, queuedBytes);
+  t.false(callbackA.called);
+  t.false(callbackB.called);
+  t.true(errorHandler.calledOnceWithExactly(redisError));
+});
+
+test('flush - carries on past a failed batch', async (t) => {
+  // `timeout` makes the test server's 404 a real failure (see isDuringTestExecution)
+  const client = await createClient({ flushAt: 1, flushInterval: 10000, timeout: 1000 });
+  const callbackA = spy();
+  const callbackC = spy();
+  client.queue = [
+    { message: 'error', callback: callbackA },
+    { message: 'c', callback: callbackC },
+  ];
+
+  // The real flush(), not the callback wrapper from createClient(), so a rejection would show.
+  await t.notThrowsAsync(Analytics.prototype.flush.call(client));
+  await setTimeout(5);
+
+  t.true(callbackA.firstCall.args[0] instanceof Error);
+  t.true(callbackC.calledOnce);
+  t.falsy(callbackC.firstCall.args[0]);
+  t.is(client.queue.length, 0);
+});
+
+test('flush - reports failed batches to their callbacks, not to the flush callback', async (t) => {
+  // `timeout` makes the test server's 404 a real failure (see isDuringTestExecution)
+  const client = await createClient({ flushAt: 1, flushInterval: 10000, timeout: 1000 });
+  const callbacks = [spy(), spy()];
+  client.queue = callbacks.map((callback) => ({ message: 'error', callback }));
+  const flushCallback = spy();
+
+  await t.notThrowsAsync(Analytics.prototype.flush.call(client, flushCallback));
+  await setTimeout(5);
+
+  t.true(callbacks.every((callback) => callback.firstCall.args[0] instanceof Error));
+  t.true(flushCallback.calledOnce);
+  t.falsy(flushCallback.firstCall.args[0]);
+  t.is(client.queue.length, 0);
+});
+
+test('flush - keeps events queued while the persistent queue is not ready', async (t) => {
+  const client = await createClient({ flushAt: 10, flushInterval: 10000 });
+  const callback = spy();
+  client.queue = [{ message: 'a', callback }];
+  client.pQueue = { add: spy() };
+  client.pQueueInitialized = false;
+
+  await t.notThrowsAsync(Analytics.prototype.flush.call(client));
+  clearTimeout(client.flushTimer);
+
+  t.is(client.queue.length, 1);
+  t.false(client.pQueue.add.called);
+  t.false(callback.called);
+});
+
+test('flush - sends an item larger than maxQueueSize on its own', async (t) => {
+  const client = await createClient({ flushAt: 10, maxQueueSize: 100 });
+  const post = Sinon.spy(client.axiosInstance, 'post');
+  client.queue = [
+    { message: { event: 'x'.repeat(500) }, callback: noop },
+    { message: { event: 'y' }, callback: noop },
+  ];
+
+  await client.flush();
+
+  t.deepEqual(
+    post.getCalls().map((call) => call.args[1].batch.map((message) => message.event)),
+    [['x'.repeat(500)], ['y']],
+  );
+  t.is(client.queue.length, 0);
 });
 
 test('identify - enqueue a message', async (t) => {
