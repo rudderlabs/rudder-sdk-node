@@ -1,0 +1,9 @@
+{
+  "release": {
+    "tag_name": "v3.0.17",
+    "prerelease": false,
+    "draft": false,
+    "published_at": "2026-10-01T00:00:00Z",
+    "target_commitish": "master"
+  }
+}

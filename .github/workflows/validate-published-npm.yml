@@ -1,0 +1,107 @@
+name: Validate published npm package (no publish)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact published version (X.Y.Z, e.g. 3.0.17)
+        required: true
+        type: string
+      source-sha:
+        description: Full immutable release commit SHA (not a branch or tag)
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: npm-validation-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  verify-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # fetch release tag and default-branch history
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      source-sha: ${{ steps.release.outputs.source-sha }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - name: Reject unsafe inputs before checkout
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_SHA: ${{ inputs.source-sha }}
+        run: |
+          [[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+      - name: Checkout trusted verification code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require default-branch workflow revision
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          [[ "$WORKFLOW_REF" == 'refs/heads/master' ]] || exit 1
+      - name: Checkout immutable release commit separately
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source-sha }}
+          path: release-source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch exact remote release tag
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          git -C release-source fetch --no-tags origin "refs/tags/v${RELEASE_VERSION}:refs/tags/v${RELEASE_VERSION}"
+      - name: Verify release tag, manifests, GitHub release and npm package
+        id: release
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_SHA: ${{ inputs.source-sha }}
+          CHECK_RELEASE_API: 'true'
+        run: |
+          cd release-source
+          python3 ../scripts/verify-release.py
+
+  published-e2e:
+    needs: verify-release
+    uses: ./.github/workflows/server-sdk-e2e.yml
+    with:
+      suite: full
+      package-version: ${{ needs.verify-release.outputs.version }}
+      source-sha: ${{ needs.verify-release.outputs.source-sha }}
+    secrets:
+      RELEASE_PRIVATE_KEY: ${{ secrets.RELEASE_PRIVATE_KEY }}
+
+  retry-accepted:
+    name: Announce successful validation-only retry
+    needs: [verify-release, published-e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - name: Notify Slack about accepted retry
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        env:
+          RELEASE_VERSION: ${{ needs.verify-release.outputs.version }}
+        with:
+          method: chat.postMessage
+          payload-templated: true
+          retries: rapid
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            {
+              "channel": "${{ secrets.SLACK_RELEASE_CHANNEL_ID }}",
+              "text": "*Node.js SDK v${{ env.RELEASE_VERSION }} validation-only retry accepted.* Existing npm publication verified by full published-package E2E; this retry did not publish a new version."
+            }

@@ -59,6 +59,38 @@ The example requires network access and unrestricted `--allow-env` permission.
 Bull/Redis persistence is not fully supported on Deno and is not recommended.
 Deno can resend timed-out requests, and queue recovery and shutdown have known limitations.
 
+## Maintainer release acceptance
+
+The `release: published` event is the only automatic npm publication trigger.
+`deploy-npm.yml` first waits for full source-candidate E2E, then checks that the
+release tag, its immutable commit, `package.json` and release-please manifest
+agree before building and publishing with npm trusted publishing. Publication
+is **not** acceptance: the registry must expose that exact version and full E2E
+must validate the installed npm package before release-complete Slack is sent.
+If publication succeeds but registry propagation, delivery, cleanup, or Slack
+fails, the run reports **published but NOT accepted**. CI cannot roll back npm.
+
+For an authorized validation-only retry, dispatch **Validate published npm
+package (no publish)** from the default branch with the exact `X.Y.Z` version
+and the full 40-character release commit SHA (`git rev-parse vX.Y.Z^{commit}`).
+It verifies the tag, both manifests, the GitHub release and registry package,
+then runs full E2E only, and sends a retry-specific acceptance notice on success.
+It runs the verifier from the default-branch workflow against a separate checkout
+of the historical release, so older releases need not contain the verifier.
+Do not rerun `deploy-tag` or the deploy workflow to retry acceptance.
+Version `3.0.17` is already published and may only be used
+via this validation-only path after the shared action and central adapter are
+ready. Do not run a live full suite without the authorized release review.
+
+**Rollout dependency:** [SDK-5962](https://linear.app/rudderstack/issue/SDK-5962)
+([shared action PR #5](https://github.com/rudderlabs/github-action-sdk-e2e/pull/5))
+and [SDK-5961](https://linear.app/rudderstack/issue/SDK-5961)
+([central PR #32](https://github.com/rudderlabs/rudder-sdk-e2e-tests/pull/32))
+must be deployed and the shared action's full commit SHA reviewed before
+activating post-publication dispatch. Until then the existing action pin is
+preserved and the published gate deliberately fails closed; do **not** merge
+this workflow until those dependencies are satisfied.
+
 ## SDK Initialization Options
 
 Below parameters are optional and can be passed during SDK initialization.

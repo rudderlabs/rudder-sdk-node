@@ -1,20 +1,22 @@
 name: Deploy to NPM
 
 on:
-  workflow_dispatch:
   release:
-    types:
-      - published
+    types: [published]
 
-permissions:
-  id-token: write # allows the JWT to be requested from GitHub's OIDC provider
-  contents: read # This is required for actions/checkout
+permissions: {}
+
+concurrency:
+  group: npm-release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
 
 jobs:
   sdk-e2e:
     # Validate the exact release-event commit before npm publication.
-    if: (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') && github.event.release.prerelease != true
+    if: ${{ !github.event.release.prerelease && !github.event.release.draft && startsWith(github.event.release.tag_name, 'v') && github.ref == format('refs/tags/{0}', github.event.release.tag_name) }}
     uses: ./.github/workflows/server-sdk-e2e.yml
+    with:
+      suite: full
     secrets:
       RELEASE_PRIVATE_KEY: ${{ secrets.RELEASE_PRIVATE_KEY }}
 
@@ -22,22 +24,42 @@ jobs:
     name: Deploy to NPM
     needs: sdk-e2e
     runs-on: ubuntu-latest
-    # Skip prereleases so they never publish to npm's default `latest` dist-tag.
-    if: (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') && github.event.release.prerelease != true
+    timeout-minutes: 30
+    permissions:
+      contents: read # checkout the release commit
+      id-token: write # npm trusted publishing with provenance
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      source-sha: ${{ steps.release.outputs.source-sha }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
-      - name: Checkout source branch
+      - name: Checkout release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0 # verify the release commit belongs to master
+          persist-credentials: false
+
+      - name: Verify release identity
+        id: release
+        env:
+          RELEASE_EVENT_PATH: ${{ github.event_path }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          # The release tag is validated before expanding it to a version.
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+          RELEASE_VERSION="${RELEASE_TAG#v}" python3 scripts/verify-release.py
 
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: '.nvmrc'
-          cache: 'npm'
+          package-manager-cache: false # never build published artifacts from a PR-writable cache
 
       - name: Build files
         env:
@@ -46,6 +68,12 @@ jobs:
           npm ci
           npm run package
 
+      - name: Check packaged version
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          node -e 'const p = require("./dist/package.json"); if (p.name !== "@rudderstack/rudder-sdk-node" || p.version !== process.env.RELEASE_VERSION) process.exit(1)'
+
       - name: Publish package to NPM
         env:
           HUSKY: 0
@@ -53,20 +81,61 @@ jobs:
           cd dist
           npm publish
 
-      - name: Get new version number
-        run: |
-          current_version=$(jq -r .version package.json)
-          echo "CURRENT_VERSION_VALUE=$current_version" >> $GITHUB_ENV
-          echo "DATE=$(date)" >> $GITHUB_ENV
-
-      - name: Send message to Slack channel
-        id: slack
-        continue-on-error: true
-        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d  # v4.0.0
+  registry-acceptance:
+    name: Wait for exact npm package
+    needs: deploy-tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions: {}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - name: Verify public npm registry propagation
         env:
-          PROJECT_NAME: 'Node.js SDK'
-          NPM_PACKAGE_URL: 'https://www.npmjs.com/package/@rudderstack/rudder-sdk-node'
-          RELEASES_URL: 'https://github.com/rudderlabs/rudder-sdk-node/releases/tag/v'
+          RELEASE_VERSION: ${{ needs.deploy-tag.outputs.version }}
+        run: |
+          if [[ ! "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Invalid published package version' >&2
+            exit 1
+          fi
+          for attempt in {1..20}; do
+            if observed=$(npm view "@rudderstack/rudder-sdk-node@$RELEASE_VERSION" version --registry=https://registry.npmjs.org --fetch-retries=0 2>/dev/null) && [[ "$observed" == "$RELEASE_VERSION" ]]; then
+              echo "Exact npm package $RELEASE_VERSION is available"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Published npm package $RELEASE_VERSION did not propagate in time" >&2
+          exit 1
+
+  published-e2e:
+    name: Full published-package E2E
+    needs: [deploy-tag, registry-acceptance]
+    uses: ./.github/workflows/server-sdk-e2e.yml
+    with:
+      suite: full
+      package-version: ${{ needs.deploy-tag.outputs.version }}
+      source-sha: ${{ needs.deploy-tag.outputs.source-sha }}
+    secrets:
+      RELEASE_PRIVATE_KEY: ${{ secrets.RELEASE_PRIVATE_KEY }}
+
+  release-complete:
+    name: Announce accepted release
+    needs: [deploy-tag, registry-acceptance, published-e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - name: Send release-complete message to Slack
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        env:
+          RELEASE_VERSION: ${{ needs.deploy-tag.outputs.version }}
         with:
           method: chat.postMessage
           payload-templated: true
@@ -75,38 +144,39 @@ jobs:
           payload: |
             {
               "channel": "${{ secrets.SLACK_RELEASE_CHANNEL_ID }}",
-              "text": "*New Release: ${{ env.PROJECT_NAME }} - <${{ env.NPM_PACKAGE_URL }}|${{ env.CURRENT_VERSION_VALUE }}>*\n${{ env.DATE }}\nCC: <!subteam^S0555JBV36D> <!subteam^S03SHJ20350>",
-              "blocks": [
-                {
-                  "type": "header",
-                  "text": {
-                    "type": "plain_text",
-                    "text": "New Release: ${{ env.PROJECT_NAME }}"
-                  }
-                },
-                {
-                  "type": "divider"
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*<${{ env.NPM_PACKAGE_URL }}|v${{ env.CURRENT_VERSION_VALUE }}>*\n${{ env.DATE }}\nCC: <!subteam^S0555JBV36D> <!subteam^S03SHJ20350>"
-                  },
-                  "accessory": {
-                    "type": "image",
-                    "image_url": "https://img.icons8.com/color/452/npm.png",
-                    "alt_text": "NPM Icon"
-                  }
-                },
-                {
-                  "type": "context",
-                  "elements": [
-                    {
-                      "type": "mrkdwn",
-                      "text": "For more details, check the full release notes <${{ env.RELEASES_URL }}${{ env.CURRENT_VERSION_VALUE }}|here>."
-                    }
-                  ]
-                }
-              ]
+              "text": "*New Release: Node.js SDK - v${{ env.RELEASE_VERSION }}*\nPublished to npm and full published-package E2E accepted.\nhttps://github.com/rudderlabs/rudder-sdk-node/releases/tag/v${{ env.RELEASE_VERSION }}\nCC: <!subteam^S0555JBV36D> <!subteam^S03SHJ20350>"
             }
+
+  acceptance-failed:
+    name: Report published but not accepted
+    needs: [deploy-tag, registry-acceptance, published-e2e, release-complete]
+    if: ${{ always() && needs.deploy-tag.result == 'success' && (needs.registry-acceptance.result != 'success' || needs.published-e2e.result != 'success' || needs.release-complete.result != 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - name: Notify Slack about published-but-unaccepted release
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        env:
+          RELEASE_VERSION: ${{ needs.deploy-tag.outputs.version }}
+        with:
+          method: chat.postMessage
+          payload-templated: true
+          retries: rapid
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            {
+              "channel": "${{ secrets.SLACK_RELEASE_CHANNEL_ID }}",
+              "text": ":warning: Node.js SDK v${{ env.RELEASE_VERSION }} was *published to npm but NOT accepted*. Registry/full E2E or release notification failed. The package cannot be rolled back by CI. Inspect this release run; retry only the validation-only workflow."
+            }
+      - name: Fail release acceptance visibly
+        env:
+          RELEASE_VERSION: ${{ needs.deploy-tag.outputs.version }}
+        run: |
+          echo "::error::npm v${RELEASE_VERSION} was published but registry/full E2E acceptance or release notification FAILED. The package remains published; retry validation only."
+          echo "## Published but NOT accepted: v${RELEASE_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+          exit 1

@@ -14,6 +14,15 @@ on:
         options: [reliability, full]
         default: reliability
   workflow_call:
+    inputs:
+      suite:
+        type: string
+      package-version:
+        type: string
+        default: ''
+      source-sha:
+        type: string
+        default: ''
     secrets:
       RELEASE_PRIVATE_KEY:
         required: true
@@ -46,8 +55,19 @@ jobs:
           owner: rudderlabs
           repositories: rudder-sdk-e2e-tests
           permission-actions: write
+      - name: Require published-package action support
+        if: inputs.package-version != ''
+        run: |
+          echo 'Published-package acceptance is blocked until SDK-5961 is deployed and SDK-5962 has a reviewed SHA pin.' >&2
+          exit 1
       - name: Detect this repository, dispatch, and wait for its result
+        if: inputs.package-version == ''
+        # Keep the current source-candidate pin until SDK-5962 has a reviewed full SHA
+        # and SDK-5961 is deployed. Published calls fail closed below in the meantime.
         uses: rudderlabs/github-action-sdk-e2e@9bcd97f1b28b1f2c3c7726ccae1bf435f4acf9c4
+        env:
+          # SDK-5962 derives source_sha from GITHUB_SHA, not a source-ref input.
+          GITHUB_SHA: ${{ inputs.source-sha || github.sha }}
         with:
           token: ${{ steps.token.outputs.token }}
           # PR candidates run without live pipeline credentials.
