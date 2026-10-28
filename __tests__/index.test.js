@@ -7,6 +7,7 @@ const { default: test } = require('ava');
 const Sinon = require('sinon');
 const { setTimeout } = require('node:timers/promises');
 const { AssertionError } = require('assert');
+const { inspect } = require('node:util');
 
 const Analytics = require('../src/index');
 const { version } = require('../package.json');
@@ -418,7 +419,7 @@ test('flush - send messages', async (t) => {
   t.true(callbackC.calledOnce);
 });
 
-test.skip('flush - respond with an error', async (t) => {
+test('flush - respond with an error', async (t) => {
   const client = await createClient({ path: '/v1/dummy' });
   const callback = spy();
 
@@ -429,8 +430,9 @@ test.skip('flush - respond with an error', async (t) => {
     },
   ];
 
-  const error = await t.throwsAsync(client.flush(), { instanceOf: AssertionError });
-  t.is(error.message, 'Not Found');
+  t.is(await client.flush(), undefined);
+  await setTimeout(5);
+  t.is(callback.firstCall.firstArg.message, 'Not Found');
 });
 
 test.skip('flush - do not throw on axios failure if errorHandler option is specified', async (t) => {
@@ -466,8 +468,147 @@ test('flush - evoke callback when errorHandler option is specified', async (t) =
   t.true(callback.calledOnce);
 });
 
-test.skip('flush - time out if configured', async (t) => {
-  const client = await createClient({ timeout: 50 });
+const unreachableWriteKey = 'unreachable-sentinel-write-key';
+const createUnreachableClient = (options) => {
+  const client = new Analytics(unreachableWriteKey, {
+    dataPlaneUrl: 'http://127.0.0.1:1',
+    flushInterval: 60_000,
+    logLevel: 'none',
+    retryCount: 0,
+    ...options,
+  });
+  createdClients.push(client);
+  return client;
+};
+const recordUnhandledRejections = () => {
+  const rejections = [];
+  const listener = (reason) => rejections.push(reason);
+  process.on('unhandledRejection', listener);
+  return { rejections, stop: () => process.removeListener('unhandledRejection', listener) };
+};
+
+test('flush - redact the write key from transport errors without changing their shape', async (t) => {
+  const errorHandler = spy();
+  const client = createUnreachableClient({ errorHandler });
+  client.flushed = true;
+  const eventCallback = spy();
+  client.track({ event: 'unreachable', userId: 'user-1' }, eventCallback);
+
+  await client.flush();
+  await setTimeout(5);
+
+  const error = errorHandler.firstCall.firstArg;
+  t.is(eventCallback.firstCall.firstArg, error);
+  t.true(error.isAxiosError);
+  t.is(error.code, 'ECONNREFUSED');
+  t.truthy(error.request);
+  t.is(error.config.auth, undefined);
+
+  const basicAuth = Buffer.from(`${unreachableWriteKey}:`).toString('base64');
+  for (const output of [inspect(error, { depth: Infinity }), JSON.stringify(error)]) {
+    t.false(output.includes(unreachableWriteKey));
+    t.false(output.includes(basicAuth));
+  }
+});
+
+for (const path of ['/missing', '/v1/batch']) {
+  test(`flush - redact HTTP errors and retry hook snapshots at ${path}`, async (t) => {
+    const snapshots = [];
+    const errorHandler = spy();
+    const client = createUnreachableClient({
+      dataPlaneUrl: `http://127.0.0.1:${port}`,
+      path,
+      gzip: false,
+      retryCount: 1,
+      errorHandler,
+      axiosRetryConfig: {
+        retryDelay: (count, error) => {
+          snapshots.push(error);
+          return 0;
+        },
+        onRetry: (count, error, config) => {
+          snapshots.push(error, config);
+          t.is(config.auth, undefined);
+        },
+        onMaxRetryTimesExceeded: (error) => snapshots.push(error),
+        validateResponse: (response) => {
+          snapshots.push(response);
+          return false;
+        },
+      },
+    });
+    client.flushed = true;
+    const callback = spy();
+    client.queue = [{ message: 'axios-retry-forever', callback }];
+    await client.flush();
+    await setTimeout(5);
+    const error = errorHandler.firstCall.firstArg;
+    t.is(error.response.status, path === '/missing' ? 404 : 503);
+    t.is(callback.firstCall.firstArg, error);
+    t.true(snapshots.length >= (path === '/missing' ? 1 : 5));
+    const token = Buffer.from(`${unreachableWriteKey}:`).toString('base64');
+    for (const value of [...snapshots, error, error.response]) {
+      const output = `${inspect(value, { depth: Infinity })}${JSON.stringify(value)}`;
+      t.false(output.includes(unreachableWriteKey));
+      t.false(output.includes(token));
+    }
+  });
+}
+
+test('flush - failures of unawaited flushes do not cause unhandled rejections', async (t) => {
+  const unhandled = recordUnhandledRejections();
+  try {
+    const client = createUnreachableClient();
+    const eventCallback = spy();
+    // The first event triggers an internal flush that nothing awaits.
+    client.track({ event: 'unreachable', userId: 'user-1' }, eventCallback);
+
+    const flushError = await new Promise((resolve) => {
+      client.flush(resolve);
+    });
+    await setTimeout(20);
+
+    t.is(flushError, undefined);
+    t.is(eventCallback.firstCall.firstArg.code, 'ECONNREFUSED');
+    t.deepEqual(unhandled.rejections, []);
+  } finally {
+    unhandled.stop();
+  }
+});
+
+test('flush - awaited flush reports failures through event callbacks', async (t) => {
+  const client = createUnreachableClient();
+  client.flushed = true;
+  const callback = spy();
+  client.track({ event: 'unreachable', userId: 'user-1' }, callback);
+
+  t.is(await client.flush(), undefined);
+  await setTimeout(5);
+  t.is(callback.firstCall.firstArg.code, 'ECONNREFUSED');
+});
+
+test('flush - persistent queue push failure requeues events without an unhandled rejection', async (t) => {
+  const unhandled = recordUnhandledRejections();
+  try {
+    const client = createUnreachableClient();
+    client.flushed = true;
+    client.pQueue = { add: () => Promise.reject(new Error('redis down')) };
+    client.pQueueInitialized = true;
+    const item = { message: 'a', callback: noop };
+    client.queue = [item];
+
+    await client.flush();
+    await setTimeout(20);
+
+    t.deepEqual(client.queue, [item]);
+    t.deepEqual(unhandled.rejections, []);
+  } finally {
+    unhandled.stop();
+  }
+});
+
+test('flush - time out if configured', async (t) => {
+  const client = await createClient({ timeout: 50, retryCount: 0 });
   const callback = spy();
 
   client.queue = [
@@ -477,8 +618,9 @@ test.skip('flush - time out if configured', async (t) => {
     },
   ];
 
-  const error = await t.throwsAsync(client.flush(), { instanceOf: AssertionError });
-  t.is(error.message, 'timeout of 50ms exceeded');
+  t.is(await client.flush(), undefined);
+  await setTimeout(5);
+  t.is(callback.firstCall.firstArg.message, 'timeout of 50ms exceeded');
 });
 
 test('flush - skip when client is disabled', async (t) => {

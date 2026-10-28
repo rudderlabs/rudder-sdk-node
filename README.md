@@ -79,6 +79,10 @@ Below parameters are optional and can be passed during SDK initialization.
 | `errorHandler`         | Function | N/A                             | Called when a server request or persistent-queue add fails; without it, the latter is only logged |
 | `gzip`                 | Boolean  | true                            | Whether to compress request with gzip or not                                                      |
 
+Retry hooks in `axiosRetryConfig` receive credential-redacted error and request snapshots.
+The snapshots omit authentication and raw request objects. Changes to snapshot fields do not
+change the live retry request. Retry decisions, delays, and asynchronous hook results still apply.
+
 ## Supported calls
 
 Refer to the [**SDK documentation**](https://www.rudderstack.com/docs/stream-sources/rudderstack-sdk-integration-guides/rudderstack-node-sdk/) for more information on the supported calls.
