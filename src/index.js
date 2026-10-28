@@ -31,6 +31,66 @@ const BATCH_ENVELOPE_BYTES = Buffer.byteLength(
 // stops instead of retrying the re-queued events straight away.
 const BATCH_NOT_SENT = Symbol('batch not sent');
 
+/**
+ * Removes the write key from an axios error in place so it is safe to log or dump,
+ * keeping its class, message, code and response intact.
+ */
+function redactCredentials(error) {
+  if (!error || typeof error !== 'object') {
+    return error;
+  }
+  [error, error.response].forEach((source) => {
+    if (!source || typeof source !== 'object') {
+      return;
+    }
+    const { config } = source;
+    if (config && typeof config === 'object') {
+      delete config.auth;
+      if (config.headers && typeof config.headers === 'object') {
+        Object.keys(config.headers)
+          .filter((name) => name.toLowerCase() === 'authorization')
+          .forEach((name) => delete config.headers[name]);
+      }
+    }
+    // The raw request holds the Authorization header; keep it reachable but out of dumps and JSON.
+    if (Object.getOwnPropertyDescriptor(source, 'request')?.configurable) {
+      Object.defineProperty(source, 'request', { enumerable: false });
+    }
+  });
+  return error;
+}
+
+// Retry hooks get snapshots so redaction cannot remove credentials from the next request.
+function retryErrorSnapshot(error) {
+  const config = error.config && { ...error.config, headers: { ...error.config.headers } };
+  const response = error.response && { ...error.response, config, request: undefined };
+  return redactCredentials(
+    new axios.AxiosError(error.message, error.code, config, undefined, response),
+  );
+}
+
+function safeRetryConfig(config = {}) {
+  const safe = { ...config };
+  if (typeof config.onRetry === 'function') {
+    safe.onRetry = (count, error) => {
+      const snapshot = retryErrorSnapshot(error);
+      return config.onRetry(count, snapshot, snapshot.config);
+    };
+  }
+  if (typeof config.retryDelay === 'function') {
+    safe.retryDelay = (count, error) => config.retryDelay(count, retryErrorSnapshot(error));
+  }
+  if (typeof config.onMaxRetryTimesExceeded === 'function') {
+    safe.onMaxRetryTimesExceeded = (error, count) =>
+      config.onMaxRetryTimesExceeded(retryErrorSnapshot(error), count);
+  }
+  if (typeof config.validateResponse === 'function') {
+    safe.validateResponse = (response) =>
+      config.validateResponse(retryErrorSnapshot({ config: response.config, response }).response);
+  }
+  return safe;
+}
+
 class Analytics {
   /**
    * Initialize a new `Analytics` with your RudderStack source's `writeKey` and an
@@ -125,7 +185,7 @@ class Analytics {
       axiosRetry(this.axiosInstance, {
         retries: retryCount || 3,
         retryDelay: axiosRetry.exponentialDelay,
-        ...axiosRetryConfig,
+        ...safeRetryConfig(axiosRetryConfig),
         // retryCondition is below optional config to ensure it does not get overridden
         retryCondition: this._isErrorRetryable.bind(this),
       });
@@ -977,6 +1037,7 @@ class Analytics {
           return Promise.resolve(data);
         })
         .catch((err) => {
+          redactCredentials(err);
           this.logger.error(`Error: ${err.response ? err.response.statusText : err.code}`);
           const isDuringTestExecution =
             err &&
