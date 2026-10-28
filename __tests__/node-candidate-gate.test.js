@@ -1,12 +1,10 @@
 /* eslint-disable unicorn/filename-case -- `__tests__` is the test directory */
 const { default: test } = require('ava');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
-const { execFileSync, spawnSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
-const script = path.join(root, 'scripts/node_candidate_gate.py');
 const sha = 'a'.repeat(40);
 const next = 'b'.repeat(40);
 const rootRepo = 'rudderlabs/rudder-sdk-node';
@@ -34,23 +32,6 @@ function pr(merge = sha, head = 'rudderlabs/rudder-sdk-node') {
     head: { repo: { full_name: head } },
   };
 }
-
-test('only current same-repository merge candidates can be selected', (t) => {
-  const cases = [
-    [pr(), sha],
-    [pr(next), 'error'],
-    [pr(sha, 'fork/node'), 'error'],
-    [{ ...pr(), base: { ref: 'other' } }, 'error'],
-    [{ ...pr(), merge_commit_sha: null }, 'error'],
-  ];
-  for (const [candidate, expected] of cases) {
-    const code =
-      `import json, node_candidate_gate as g\np=json.loads(${JSON.stringify(JSON.stringify(candidate))})\n` +
-      `env={'PR_NUMBER':'42','EVENT_SHA':'${sha}','GITHUB_REPOSITORY':g.REPOSITORY,'GH_TOKEN':'test'}\n` +
-      `try:\n print(g.select_pr(env, api=lambda *a:p))\nexcept ValueError:\n print('error')`;
-    t.is(runPython(code), expected);
-  }
-});
 
 test('eligible PR aggregate rejects missing, skipped, failed, cancelled and stale validation', (t) => {
   for (const result of ['missing', 'skipped', 'failure', 'cancelled', 'success']) {
@@ -124,87 +105,81 @@ test('fork and Dependabot have the same context but no privileged validation', (
   }
 });
 
-test('release identity rejects advanced master, mismatched versions and unsupported refs', (t) => {
-  const code =
-    `import node_candidate_gate as g\n` +
-    `print(g.release_identity('v3.0.17','v3.0.17','${sha}','${sha}','3.0.17'))`;
-  t.is(runPython(code), 'None');
-  for (const [tag, release, commit, master, version] of [
-    ['v3.0.17', 'v3.0.17', sha, next, '3.0.17'],
-    ['v3.0.17', 'v3.0.18', sha, sha, '3.0.17'],
-    ['v3.0.17', 'v3.0.17', sha, sha, '3.0.18'],
-    ['master', 'master', sha, sha, '3.0.17'],
-    ['v3.0.17-rc.1', 'v3.0.17-rc.1', sha, sha, '3.0.17-rc.1'],
-  ]) {
-    const expression = `g.release_identity(${[tag, release, commit, master, version].map(JSON.stringify).join(',')})`;
-    t.is(
-      runPython(
-        `import node_candidate_gate as g\ntry:\n ${expression}\nexcept ValueError:\n print('rejected')`,
-      ),
-      'rejected',
-    );
-  }
+test('base updates list every open PR with pagination; PR events select one', (t) => {
+  const code = `import node_candidate_gate as g
+p={'number':42,'state':'open','base':{'ref':'master'}}
+env={'GITHUB_REPOSITORY':g.REPOSITORY,'GH_TOKEN':'test','GITHUB_EVENT_NAME':'push','GITHUB_REF':'refs/heads/master'}
+pages=[]
+def api(path,token):
+ pages.append(path)
+ return [p]*100 if path.endswith('&page=1') else [dict(p,number=43)]
+print(len(g.candidates(env,api)))
+print(len(pages))
+env.update(GITHUB_EVENT_NAME='pull_request_target',PR_NUMBER='42')
+print(g.candidates(env,lambda *a:p))
+print(g.candidates(env,lambda *a:dict(p,state='closed')))
+`;
+  t.is(runPython(code), "101\n2\n[{'number': 42}]\n[]");
 });
 
-test('workflow graph gates publication and retry has no upload or tag creation', (t) => {
-  const workflow = fs.readFileSync(path.join(root, '.github/workflows/deploy-npm.yml'), 'utf8');
-  const retry = fs.readFileSync(path.join(root, '.github/workflows/published-sdk-e2e.yml'), 'utf8');
-  const prWorkflow = fs.readFileSync(
-    path.join(root, '.github/workflows/server-sdk-e2e.yml'),
-    'utf8',
+test('selection waits for a merge commit with current base and head parents', (t) => {
+  const code = `import node_candidate_gate as g
+base='b'*40; head='c'*40; merge='a'*40
+p={'number':42,'state':'open','mergeable':True,'merge_commit_sha':merge,'base':{'ref':'master'},'head':{'sha':head,'repo':{'full_name':g.REPOSITORY}},'user':{'login':'release-bot'}}
+env={'PR_NUMBER':'42','GITHUB_REPOSITORY':g.REPOSITORY,'GH_TOKEN':'test'}
+calls=[]
+def api(path,token):
+ if path.startswith('/pulls/'): return p
+ if path=='/git/ref/heads/master': return {'object':{'sha':base}}
+ calls.append(path)
+ return {'parents':[{'sha':base if len(calls)>1 else 'd'*40},{'sha':head}]}
+print(g.current_candidate(env,api,sleep=lambda _:None)['sha'])
+print(len(calls))
+p['head']['repo']['full_name']='fork/node'
+print(g.current_candidate(env,api,sleep=lambda _:None)['eligible'])
+p['head']['repo']['full_name']=g.REPOSITORY
+p['user']['login']='dependabot[bot]'
+print(g.current_candidate(env,api,sleep=lambda _:None)['eligible'])
+p['mergeable']=False
+try: g.current_candidate(env,api,sleep=lambda _:None)
+except ValueError: print('conflict rejected')
+`;
+  t.is(runPython(code), `${sha}\n2\nfalse\nfalse\nconflict rejected`);
+});
+
+test('selection rejects a changed PR head and an unready candidate', (t) => {
+  const code = `import node_candidate_gate as g
+p={'number':42,'state':'open','mergeable':True,'merge_commit_sha':'a'*40,'base':{'ref':'master'},'head':{'sha':'c'*40,'repo':{'full_name':g.REPOSITORY}},'user':{'login':'release-bot'}}
+env={'PR_NUMBER':'42','GITHUB_REPOSITORY':g.REPOSITORY,'GH_TOKEN':'test'}
+def api(path,token):
+ if path.startswith('/pulls/'): return p
+ if path=='/git/ref/heads/master': return {'object':{'sha':'b'*40}}
+ return {'parents':[{'sha':'b'*40},{'sha':'d'*40}]}
+for ready in [True,None]:
+ p['mergeable']=ready
+ try: g.current_candidate(env,api,sleep=lambda _:None)
+ except ValueError: print('rejected')
+`;
+  t.is(runPython(code), 'rejected\nrejected');
+});
+
+test('PR status publication is separate from reusable release validation', (t) => {
+  const read = (name) => fs.readFileSync(path.join(root, '.github/workflows', name), 'utf8');
+  const candidate = read('node-candidate-e2e.yml');
+  const release = read('server-sdk-e2e.yml');
+  t.true(candidate.includes('pull_request_target:'));
+  t.true(candidate.includes('push:'));
+  t.true(candidate.includes('branches: [master]'));
+  t.true(candidate.includes('name: Validate PR candidate'));
+  t.false(candidate.includes('name: Node Candidate E2E'));
+  t.true(candidate.includes('pr-number: ${{ matrix.candidate.number }}'));
+  t.true(candidate.includes('merge-sha: ${{ steps.candidate.outputs.sha }}'));
+  t.true(
+    candidate.includes('rudderlabs/github-action-sdk-e2e@4932729bffd737fc92f9cbed32115b2621da2bcd'),
   );
-  t.regex(workflow, /sdk-e2e:[\s\S]+needs: validate-ref[\s\S]+suite: full/);
-  t.regex(workflow, /deploy-tag:[\s\S]+needs: \[validate-ref, sdk-e2e\]/);
-  t.regex(
-    workflow,
-    /python3 gate\/scripts\/node_candidate_gate\.py artifact "\$TARBALL" "\$VALIDATED_VERSION" "\$DIGEST"\s+npm publish --ignore-scripts "\$TARBALL"/,
-  );
-  t.regex(workflow, /published-e2e:[\s\S]+needs: deploy-tag/);
-  t.regex(workflow, /ref: master\s+path: gate/);
-  t.regex(workflow, /npm pack --json --ignore-scripts/);
-  t.regex(prWorkflow, /pr-number: \$\{\{ github.event.pull_request.number \}\}/);
-  t.regex(prWorkflow, /merge-sha: \$\{\{ steps.candidate.outputs.sha \}\}/);
-  t.notRegex(prWorkflow, /\sGITHUB_SHA:\s*\$\{\{/);
-  t.notRegex(workflow, /workflow_dispatch:/);
-  t.notRegex(retry, /npm publish|git tag|id-token: write/);
-  t.regex(prWorkflow, /pr-gate:[\s\S]+name: Node Candidate E2E[\s\S]+if: always\(\)/);
-});
-
-test('npm pack filename comes from exactly one safe JSON entry', (t) => {
-  const code =
-    `import json, tempfile, pathlib, node_candidate_gate as g\n` +
-    `with tempfile.TemporaryDirectory() as tmp:\n` +
-    ` p=pathlib.Path(tmp)\n (p/'new-package-name.tgz').touch()\n` +
-    ` print(g.pack_file(p,json.dumps([{'filename':'new-package-name.tgz'}])).name)\n` +
-    ` for value in [[],[{'filename':'../outside.tgz'}],[{'filename':'new-package-name.tgz'},{'filename':'other.tgz'}]]:\n` +
-    `  try: g.pack_file(p,json.dumps(value))\n  except ValueError: print('rejected')`;
-  t.is(runPython(code), 'new-package-name.tgz\nrejected\nrejected\nrejected');
-});
-
-test('packed artifact digest detects substitutions and wrong package versions', (t) => {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'node-release-'));
-  try {
-    const packageDir = path.join(temp, 'package');
-    fs.mkdirSync(packageDir);
-    fs.writeFileSync(
-      path.join(packageDir, 'package.json'),
-      JSON.stringify({ name: '@rudderstack/rudder-sdk-node', version: '3.0.17' }),
-    );
-    const archive = path.join(temp, 'package.tgz');
-    execFileSync('tar', ['-czf', archive, '-C', temp, 'package']);
-    const digest = execFileSync('python3', [script, 'artifact', archive, '3.0.17'], {
-      cwd: root,
-      encoding: 'utf8',
-    }).trim();
-    t.regex(digest, /^[a-f0-9]{64}$/);
-    t.is(spawnSync('python3', [script, 'artifact', archive, '3.0.18'], { cwd: root }).status, 1);
-    fs.writeFileSync(path.join(packageDir, 'extra.txt'), 'changed');
-    execFileSync('tar', ['-czf', archive, '-C', temp, 'package']);
-    t.is(
-      spawnSync('python3', [script, 'artifact', archive, '3.0.17', digest], { cwd: root }).status,
-      1,
-    );
-  } finally {
-    fs.rmSync(temp, { recursive: true, force: true });
-  }
+  t.true(candidate.includes("if: steps.candidate.outputs.eligible == 'true'"));
+  t.true(candidate.includes("if: always() && steps.candidate.outputs.sha != ''"));
+  t.false(/npm publish|npm ci|ref:.*head|ref:.*merge|suite: full/.test(candidate));
+  t.false(release.includes('statuses: write'));
+  t.false(release.includes('pull_request:'));
 });

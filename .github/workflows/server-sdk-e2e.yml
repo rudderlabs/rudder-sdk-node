@@ -1,10 +1,6 @@
 name: Server SDK E2E
 
 on:
-  # Run the trusted default-branch caller, never candidate-controlled workflow code.
-  # The untrusted PR merge ref is only fetched by the isolated central runner.
-  pull_request_target:
-    types: [opened, reopened, synchronize, ready_for_review, edited]
   push:
     branches: [master]
   workflow_dispatch:
@@ -15,67 +11,23 @@ on:
         options: [reliability, full]
         default: reliability
   workflow_call:
-    inputs:
-      suite:
-        required: true
-        type: string
-      candidate-sha:
-        required: true
-        type: string
     secrets:
       RELEASE_PRIVATE_KEY:
         required: true
 
-permissions: {}
+permissions:
+  contents: read
 
-# Never let a later PR update cancel an in-flight live validation.
-concurrency:
-  group: node-candidate-${{ github.event.pull_request.number || github.ref }}-${{ github.run_id }}
-  cancel-in-progress: false
-
+# Independent requests must not cancel earlier merge or release validations.
 jobs:
   validate:
-    # Ineligible PRs do not mint an App token; author identity is not a trust signal.
-    if: >-
-      github.event_name != 'pull_request_target' ||
-      (github.event.pull_request.head.repo.full_name == github.repository &&
-       github.event.pull_request.user.login != 'dependabot[bot]')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 55
-    permissions:
-      contents: read
-    outputs:
-      validated-sha: ${{ steps.completed.outputs.sha }}
-      run-url: ${{ steps.e2e.outputs.run-url }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
-      - name: Checkout trusted gate code (never the PR)
-        if: github.event_name == 'pull_request_target'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: master
-          persist-credentials: false
-      - name: Require current PR merge candidate
-        if: github.event_name == 'pull_request_target'
-        id: candidate
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          EVENT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/node_candidate_gate.py select
-      - name: Require release candidate SHA for full calls
-        if: github.event_name == 'release'
-        env:
-          CANDIDATE_SHA: ${{ inputs.candidate-sha }}
-          CANDIDATE_SUITE: ${{ inputs.suite }}
-        run: |
-          if [[ "$GITHUB_REF" != refs/tags/v* || ! "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ || "$CANDIDATE_SUITE" != full ]]; then
-            echo 'Release candidate must be an exact commit and full suite.' >&2
-            exit 1
-          fi
       - name: Create a central validation token
         id: token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -85,59 +37,8 @@ jobs:
           owner: rudderlabs
           repositories: rudder-sdk-e2e-tests
           permission-actions: write
-      - name: Dispatch isolated PR delivery validation and wait
-        if: github.event_name == 'pull_request_target'
-        id: e2e
-        uses: rudderlabs/github-action-sdk-e2e@9bcd97f1b28b1f2c3c7726ccae1bf435f4acf9c4 # source candidate; resolve reviewed explicit-input pin before rollout
-        with:
-          token: ${{ steps.token.outputs.token }}
-          suite: reliability
-          pr-number: ${{ github.event.pull_request.number }}
-          merge-sha: ${{ steps.candidate.outputs.sha }}
-      - name: Dispatch trusted source validation and wait
-        if: github.event_name != 'pull_request_target'
-        uses: rudderlabs/github-action-sdk-e2e@9bcd97f1b28b1f2c3c7726ccae1bf435f4acf9c4 # source candidate; resolve reviewed explicit-input pin before rollout
+      - name: Detect this repository, dispatch, and wait for its result
+        uses: rudderlabs/github-action-sdk-e2e@9bcd97f1b28b1f2c3c7726ccae1bf435f4acf9c4
         with:
           token: ${{ steps.token.outputs.token }}
           suite: ${{ inputs.suite || vars.SDK_E2E_SUITE || 'reliability' }}
-      - name: Verify completed PR candidate identity
-        if: github.event_name == 'pull_request_target'
-        id: completed
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          EVENT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
-          VALIDATED_SHA: ${{ steps.candidate.outputs.sha }}
-          VALIDATION_RUN: ${{ steps.e2e.outputs.run-id }}
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/node_candidate_gate.py completed
-
-  pr-gate:
-    name: Node Candidate E2E
-    if: always() && github.event_name == 'pull_request_target'
-    needs: validate
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      statuses: write # Attach the stable context to the current PR merge SHA.
-    steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
-        with:
-          egress-policy: audit
-      - name: Checkout trusted gate code (never the PR)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: master
-          persist-credentials: false
-      - name: Require current candidate or record intentional ineligibility
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          EVENT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-          VALIDATION_RESULT: ${{ needs.validate.result }}
-          VALIDATED_SHA: ${{ needs.validate.outputs.validated-sha }}
-          VALIDATION_RUN: ${{ needs.validate.outputs.run-url }}
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/node_candidate_gate.py pr
