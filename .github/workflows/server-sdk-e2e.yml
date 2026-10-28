@@ -14,6 +14,10 @@ on:
         options: [reliability, full]
         default: reliability
   workflow_call:
+    inputs:
+      suite:
+        type: string
+        default: reliability
     secrets:
       RELEASE_PRIVATE_KEY:
         required: true

@@ -11,19 +11,45 @@ permissions:
   contents: read # This is required for actions/checkout
 
 jobs:
+  validate-ref:
+    name: Require an exact release ref
+    if: github.event.release.prerelease != true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - name: Check the selected tag
+        run: |
+          if [[ "$GITHUB_REF_TYPE" != tag ]] ||
+             [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Publication requires an existing stable release tag. Use published-sdk-e2e.yml to retry validation.' >&2
+            exit 1
+          fi
+
   sdk-e2e:
+    needs: validate-ref
     # Validate the exact release-event commit before npm publication.
-    if: (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') && github.event.release.prerelease != true
+    if: startsWith(github.ref, 'refs/tags/v') && github.event.release.prerelease != true
+    permissions:
+      contents: read
     uses: ./.github/workflows/server-sdk-e2e.yml
+    with:
+      suite: full
     secrets:
       RELEASE_PRIVATE_KEY: ${{ secrets.RELEASE_PRIVATE_KEY }}
 
   deploy-tag:
     name: Deploy to NPM
     needs: sdk-e2e
+    outputs:
+      version: ${{ steps.release.outputs.version }}
     runs-on: ubuntu-latest
     # Skip prereleases so they never publish to npm's default `latest` dist-tag.
-    if: (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') && github.event.release.prerelease != true
+    if: startsWith(github.ref, 'refs/tags/v') && github.event.release.prerelease != true
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -39,6 +65,21 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
+      - name: Validate the exact release version
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const {version} = require('./package.json');
+          if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(version) ||
+              process.env.RELEASE_TAG !== `v${version}`) {
+            throw new Error('Release tag must match the exact stable package version');
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+          JS
+
       - name: Build files
         env:
           HUSKY: 0
@@ -53,13 +94,42 @@ jobs:
           cd dist
           npm publish
 
-      - name: Get new version number
+  published-e2e:
+    name: Accept exact published package
+    needs: deploy-tag
+    permissions:
+      contents: read
+    uses: ./.github/workflows/published-sdk-e2e.yml
+    with:
+      package-version: ${{ needs.deploy-tag.outputs.version }}
+    secrets:
+      RELEASE_PRIVATE_KEY: ${{ secrets.RELEASE_PRIVATE_KEY }}
+
+  notify-slack:
+    name: Report npm release acceptance
+    if: ${{ always() && needs.deploy-tag.result == 'success' }}
+    needs: [deploy-tag, published-e2e]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CURRENT_VERSION_VALUE: ${{ needs.deploy-tag.outputs.version }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - name: Record publication and acceptance separately
+        env:
+          ACCEPTANCE_RESULT: ${{ needs.published-e2e.result }}
         run: |
-          current_version=$(jq -r .version package.json)
-          echo "CURRENT_VERSION_VALUE=$current_version" >> $GITHUB_ENV
-          echo "DATE=$(date)" >> $GITHUB_ENV
+          echo "npm publication succeeded. Published-package E2E: $ACCEPTANCE_RESULT." >> "$GITHUB_STEP_SUMMARY"
+          echo 'The package remains published if acceptance fails. Retry published-sdk-e2e.yml at the same release tag.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Set notification date
+        run: echo "DATE=$(date)" >> "$GITHUB_ENV"
 
       - name: Send message to Slack channel
+        if: needs.published-e2e.result == 'success'
         id: slack
         continue-on-error: true
         uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d  # v4.0.0
