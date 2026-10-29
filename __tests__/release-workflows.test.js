@@ -197,7 +197,7 @@ test('validation-only retries delegate to a pinned shared workflow without publi
   t.false(/npm publish|slack-github-action|id-token: write|actions\/checkout/.test(published));
   t.true(
     published.includes(
-      'uses: rudderlabs/github-action-sdk-e2e/.github/workflows/published-sdk-e2e.yml@d49721d3b1ab5e53e6d1b6e1f6919556bb5d398a',
+      'uses: rudderlabs/github-action-sdk-e2e/.github/workflows/published-sdk-e2e.yml@1f92c84d6836a235604457ca29c02fd1a0d7c874',
     ),
   );
   t.true(published.includes('package-version: ${{ inputs.package-version || github.ref_name }}'));

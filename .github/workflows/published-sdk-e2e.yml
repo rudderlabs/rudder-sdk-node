@@ -23,8 +23,8 @@ permissions:
 # Do not cancel live validation; the central workflow owns locking and cleanup.
 jobs:
   validate:
-    # SDK-5977 PR #8. Merge only after the shared workflow and central support are approved.
-    uses: rudderlabs/github-action-sdk-e2e/.github/workflows/published-sdk-e2e.yml@d49721d3b1ab5e53e6d1b6e1f6919556bb5d398a
+    # SDK-5977. Review and merge shared-action PR #8 before this caller.
+    uses: rudderlabs/github-action-sdk-e2e/.github/workflows/published-sdk-e2e.yml@1f92c84d6836a235604457ca29c02fd1a0d7c874
     with:
       package-version: ${{ inputs.package-version || github.ref_name }}
       release-app-client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
