@@ -52,14 +52,11 @@ No scanner suppression or security-alert dismissal is included.
 
 ## Release boundaries
 
-This PR does not replace the publication or post-publication workflows. The
-existing `deploy-npm.yml` dependency on the full release-event candidate check
-remains intact. Published-package acceptance and validation-only retries are
-maintained separately in [PR #502](https://github.com/rudderlabs/rudder-sdk-node/pull/502)
-under [SDK-5963](https://linear.app/rudderstack/issue/SDK-5963).
-The source candidate and publisher currently rebuild from the same release
-commit. This PR does not claim that the central runner tested the exact uploaded
-bytes. Artifact equality remains a separate release acceptance requirement.
+PR validation cannot authorize publication. The full source-candidate check runs
+inside `deploy-npm.yml` before npm upload. The publisher uploads the exact tested
+archive, as described below. Independent published-package acceptance and
+validation-only retries remain tracked in
+[SDK-5963](https://linear.app/rudderstack/issue/SDK-5963).
 
 ## Required-check rollout
 
@@ -79,3 +76,51 @@ rule is applied and verified. PR validation can run before this workflow reaches
 The rules read on 29 October 2026 require the native unit, build, and PR-title
 checks. They do not require `Node Candidate E2E`. The pilot check remains
 advisory until the rollout above is complete.
+
+## Exact package publication and registry acceptance
+
+Publication starts only from a stable GitHub release event. A validation retry
+uses the separate workflow below. There is one automatic publication trigger.
+
+The publisher preserves native installation and build checks. It then runs the
+full shared source-candidate check at the release-event commit. The shared action
+returns authenticated result JSON and the exact tested npm archive. Immediately
+before upload, the publisher checks the result's source selection, repository,
+commit, package, version, source tree, delivery, restoration, and lock release.
+It also checks both archive digests and requires the release tag and current
+`master` to resolve to the release-event commit. If `master` advances, publication
+stops. The publisher uploads the retained archive with npm provenance. It does
+not upload the local rebuild.
+
+After upload, `published-sdk-e2e.yml` uses the shared v1.0.0 workflow at
+`b6de40cc65abe8ee6c6593aac1787aea746b671f`. That workflow checks the exact public
+npm version, registry integrity, delivery, and cleanup. Source acceptance and
+registry acceptance remain separate checks.
+
+The final notification waits for publication and registry acceptance. The short
+channel post contains the SDK, version, UTC date, final status, and release
+mentions. The thread reply contains the exact npm version, release, workflow,
+and available central-run links. Replies do not broadcast. Link previews are off.
+A confirmed upload followed by failed acceptance reports the package as published
+with incomplete acceptance. A failed notification cannot erase the workflow summary.
+
+### Validation-only retry
+
+1. Open the failed central run.
+2. Resolve the validation failure.
+3. Run the retry at the existing release tag:
+
+```sh
+gh workflow run published-sdk-e2e.yml --repo rudderlabs/rudder-sdk-node --ref vX.Y.Z
+```
+
+The retry workflow must exist on the default branch and selected tag. Older tags
+need an exact-version dispatch through the central workflow. The retry cannot
+publish, create tags, or send release notifications. A published package remains
+published when acceptance fails. Record successful retry evidence in the release
+ticket and existing release thread.
+
+Tracked in [SDK-5963](https://linear.app/rudderstack/issue/SDK-5963) and
+[SDK-5980](https://linear.app/rudderstack/issue/SDK-5980). Required-check rollout
+remains separate. Hosted pre-publication and registry acceptance will run during
+the next normal release. Do not create a release solely to test this wiring.

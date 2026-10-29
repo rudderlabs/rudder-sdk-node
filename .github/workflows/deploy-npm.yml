@@ -1,13 +1,11 @@
 name: Deploy to NPM
 
 on:
-  workflow_dispatch:
   release:
     types:
       - published
 
 permissions:
-  id-token: write # allows the JWT to be requested from GitHub's OIDC provider
   contents: read # This is required for actions/checkout
 
 jobs:
@@ -30,25 +28,19 @@ jobs:
             exit 1
           fi
 
-  sdk-e2e:
-    needs: validate-ref
-    # Validate the exact release-event commit before npm publication.
-    if: startsWith(github.ref, 'refs/tags/v') && github.event.release.prerelease != true
-    permissions:
-      contents: read
-    uses: ./.github/workflows/server-sdk-e2e.yml
-    with:
-      suite: full
-    secrets:
-      RELEASE_PRIVATE_KEY: ${{ secrets.RELEASE_PRIVATE_KEY }}
-
   deploy-tag:
     name: Deploy to NPM
-    needs: sdk-e2e
+    needs: validate-ref
     outputs:
       version: ${{ steps.release.outputs.version }}
       uploaded: ${{ steps.publish.outputs.uploaded }}
+      candidate-result: ${{ steps.e2e.outcome }}
+      publish-result: ${{ steps.publish.outcome }}
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing and provenance
     # Skip prereleases so they never publish to npm's default `latest` dist-tag.
     if: startsWith(github.ref, 'refs/tags/v') && github.event.release.prerelease != true
     steps:
@@ -59,12 +51,14 @@ jobs:
 
       - name: Checkout source branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: '.nvmrc'
-          cache: 'npm'
+          package-manager-cache: false
 
       - name: Validate the exact release version
         id: release
@@ -88,13 +82,34 @@ jobs:
           npm ci
           npm run package
 
+      - name: Create a central validation token
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PRIVATE_KEY }}
+          owner: rudderlabs
+          repositories: rudder-sdk-e2e-tests
+          permission-actions: write
+
+      - name: Validate the exact source candidate and retain the tested package
+        id: e2e
+        uses: rudderlabs/github-action-sdk-e2e@b6de40cc65abe8ee6c6593aac1787aea746b671f # v1.0.0
+        with:
+          token: ${{ steps.token.outputs.token }}
+          suite: full
+
       - name: Publish package to NPM
         id: publish
         env:
           HUSKY: 0
+          CANDIDATE_REPORT: ${{ steps.e2e.outputs.report }}
+          VALIDATED_SHA: ${{ steps.e2e.outputs.validated-sha }}
+          PACKAGE_FILE: ${{ steps.e2e.outputs.package-file }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          cd dist
-          npm publish
+          node scripts/verify-release-candidate.js
+          npm publish "$PACKAGE_FILE" --provenance --ignore-scripts
           echo 'uploaded=true' >> "$GITHUB_OUTPUT"
 
   published-e2e:
@@ -111,7 +126,7 @@ jobs:
   notify-slack:
     name: Report publication and acceptance outcome
     if: ${{ always() && needs.validate-ref.result == 'success' }}
-    needs: [validate-ref, sdk-e2e, deploy-tag, published-e2e]
+    needs: [validate-ref, deploy-tag, published-e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -120,8 +135,8 @@ jobs:
       RELEASE_TAG: ${{ github.ref_name }}
       RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      CANDIDATE_RESULT: ${{ needs.sdk-e2e.result }}
-      PUBLISH_RESULT: ${{ needs.deploy-tag.result }}
+      CANDIDATE_RESULT: ${{ needs.deploy-tag.outputs.candidate-result || 'skipped' }}
+      PUBLISH_RESULT: ${{ needs.deploy-tag.outputs.publish-result || 'skipped' }}
       UPLOADED: ${{ needs.deploy-tag.outputs.uploaded }}
       ACCEPTANCE_RESULT: ${{ needs.published-e2e.result }}
       CENTRAL_RUN_URL: ${{ needs.published-e2e.outputs.run-url }}
