@@ -120,6 +120,21 @@ publish, create tags, or send release notifications. A published package remains
 published when acceptance fails. Record successful retry evidence in the release
 ticket and existing release thread.
 
+A tag retry uses workflow code and pins stored at that tag. If a workflow fix
+was merged later, use the current central workflow instead. Copy the full commit
+SHA from the original release run. Replace the example version, commit
+placeholder, and request ID before running:
+
+```sh
+gh workflow run server-sdk-validation.yml --repo rudderlabs/rudder-sdk-e2e-tests --ref main \
+  -f selection=auto -f source_repository=rudderlabs/rudder-sdk-node \
+  -f source_sha=RELEASE_EVENT_COMMIT_SHA -f package_version=X.Y.Z \
+  -f suite=full -f request_id=node-published-X_Y_Z-retry-UNIQUE_ID
+```
+
+Release-run reruns send no announcement after the first attempt. If notification
+fails, repair the existing release thread separately.
+
 Tracked in [SDK-5963](https://linear.app/rudderstack/issue/SDK-5963) and
 [SDK-5980](https://linear.app/rudderstack/issue/SDK-5980). Required-check rollout
 remains separate. Hosted pre-publication and registry acceptance will run during

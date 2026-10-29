@@ -125,7 +125,7 @@ jobs:
 
   notify-slack:
     name: Report publication and acceptance outcome
-    if: ${{ always() && needs.validate-ref.result == 'success' }}
+    if: ${{ always() && needs.validate-ref.result == 'success' && github.run_attempt == '1' }}
     needs: [validate-ref, deploy-tag, published-e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 5

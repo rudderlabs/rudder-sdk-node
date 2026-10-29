@@ -189,7 +189,11 @@ test('publication and notification preserve the full acceptance dependency chain
   t.false(deploy.includes('workflow_dispatch:'));
   t.true(acceptance.includes('needs: deploy-tag'));
   t.true(acceptance.includes('package-version: ${{ needs.deploy-tag.outputs.version }}'));
-  t.true(notify.includes("always() && needs.validate-ref.result == 'success'"));
+  t.true(
+    notify.includes(
+      "always() && needs.validate-ref.result == 'success' && github.run_attempt == '1'",
+    ),
+  );
   t.true(notify.includes('needs: [validate-ref, deploy-tag, published-e2e]'));
   t.true(notify.includes('needs.deploy-tag.outputs.candidate-result'));
   t.false(notify.includes('if: needs.published-e2e.result'));
