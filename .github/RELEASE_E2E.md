@@ -1,40 +1,81 @@
-# Published Node SDK acceptance
+# Node PR candidate validation
 
-The published-package workflow runs the full central E2E suite for the exact stable release version. It uses the existing release App and waits for delivery validation and cleanup. The central workflow checks the release tag against the immutable event commit and `master` ancestry. It installs the exact public registry package and verifies native package metadata and integrity evidence.
+The `Node PR candidate E2E` workflow uses `pull_request` for PR updates and
+`push` for updates to `master`. Same-repository writers are trusted to run
+workflow changes with repository secrets. This matches the existing repository
+trust model. External contributors can trigger fork PR workflows, subject to
+GitHub's approval policy, but do not receive repository secrets or write tokens.
+Organization membership alone does not determine this access.
 
-Acceptance starts only after the existing publisher succeeds. Existing native build, security, and publication checks remain in place. The final Slack notification waits for both publication and published-package acceptance to finish.
+The privileged jobs exclude forks and Dependabot before checkout. The guard
+checks both the PR author and the original workflow actor, so a maintainer rerun
+does not enable a Dependabot PR. Eligible PR jobs load gate code from the event's
+merge commit. Master push jobs load gate code from the pushed commit.
+An actor check alone never grants an exclusion. If Dependabot triggers an
+otherwise eligible PR, that run cannot validate or report an exclusion.
 
-Node retains the full source-candidate E2E gate before npm publication.
+The caller sends the PR number and current merge SHA to shared-action commit
+`b6de40cc65abe8ee6c6593aac1787aea746b671f` (shared-action v1.0.0).
+The central runner executes candidate code in its isolated reliability job.
+Candidate code does not receive workspace credentials or the caller's token.
 
-Existing manual publication must select a release tag. A master-branch dispatch cannot bind the uploaded artifact to a release tag and is no longer a publication path.
+A push to `master` selects all open PRs again. The selector waits for GitHub's
+merge commit and checks both parents against current `master` and the PR head.
+The workflow checks the same identity after validation and before publishing
+its result. An obsolete run cannot approve a newer SHA. A PR event must still
+match its original merge SHA. A rerun of a stale PR event fails before token
+creation. After a base update, the master-push workflow validates the new candidate.
 
-## Release notification
+## Check reporting and exclusions
 
-The short channel post contains the SDK, version, UTC date, final status, and existing release mentions. A non-broadcast thread reply contains the exact npm version, release, workflow, and available central-run links, plus the check results. Link previews are disabled. The existing Slack action pin, channel, and bot credential are preserved.
+`Node Candidate E2E` is a GitHub check, not a commit status:
 
-- `accepted` requires a confirmed upload and successful full published-package E2E, including registry verification, delivery, and cleanup.
-- A confirmed upload followed by failed, skipped, or cancelled acceptance reports `published; validation failed or incomplete`.
-- An unsuccessful or unconfirmed upload reports `publication failed or unconfirmed; acceptance incomplete`. This does not assert that the package is absent from npm.
-- If candidate validation prevents publication, the notification reports that publication was not attempted.
+- Eligible PRs publish a completed check at the exact current merge SHA through
+  the Checks API. Failed or missing validation produces a failure, or leaves the
+  required check absent if candidate selection itself fails.
+- Fork and Dependabot PR events use a separate no-permission job. This job has no
+  checkout, secret access, token creation, or API write. GitHub reports its
+  successful check on the PR head. Its summary states that central validation is
+  intentionally excluded. Existing native tests still apply.
+- On master pushes, the publisher can report a `skipped` check for excluded PRs
+  at their current merge SHA. It never creates the release App token for them.
 
-The workflow records the result in its GitHub summary before contacting Slack. Slack errors cannot erase that summary or turn failed acceptance into success. A thread reply requires a confirmed root message and a valid timestamp.
+The exclusion job uses `Node Candidate E2E` only for excluded PR events. For
+eligible PRs, its informational job has the different name `Report excluded PRs`.
+This prevents an informational head check from satisfying the candidate requirement
+when central validation fails. The matrix job remains `Validate PR candidate`.
+No commit status shares the required check name.
 
-## Validation-only retry
+This workflow uses the same `pull_request` model as the
+[Kotlin caller](https://github.com/rudderlabs/rudder-sdk-kotlin/blob/main/.github/workflows/live-integration-tests.yml).
+No scanner suppression or security-alert dismissal is included.
 
-1. Open the failed central run from the shared action summary.
-2. Resolve the validation failure.
-3. Run this workflow at the existing release tag:
+## Release boundaries
 
-```sh
-gh workflow run published-sdk-e2e.yml --repo rudderlabs/rudder-sdk-node --ref vX.Y.Z
-```
+This PR does not replace the publication or post-publication workflows. The
+existing `deploy-npm.yml` dependency on the full release-event candidate check
+remains intact. Published-package acceptance and validation-only retries are
+maintained separately in [PR #502](https://github.com/rudderlabs/rudder-sdk-node/pull/502)
+under [SDK-5963](https://linear.app/rudderstack/issue/SDK-5963).
+The source candidate and publisher currently rebuild from the same release
+commit. This PR does not claim that the central runner tested the exact uploaded
+bytes. Artifact equality remains a separate release acceptance requirement.
 
-The retry has no upload path or publishing credential. It derives the exact version and commit from the selected tag. It does not use `latest`, publish a package, or recreate a tag. Tags predating this workflow need an exact-version dispatch through the central workflow. Stable `X.Y.Z` versions are supported; prerelease acceptance is not implemented.
+## Required-check rollout
 
-A published package remains published if acceptance fails. Do not rerun a successful upload job to retry E2E. A successful validation-only retry does not change an earlier failed run or its notification. Record the new acceptance run in the release ticket and existing Slack release thread.
+Tracked in [SDK-5980](https://linear.app/rudderstack/issue/SDK-5980).
 
-## Rollout
+1. Verify the check on an ordinary PR and a Release Please PR.
+2. Verify the documented fork and Dependabot exclusions, including reruns.
+3. Merge the caller after review and passing checks.
+4. Advance `master` and verify revalidation at the new merge SHA.
+5. Confirm check attachment and the GitHub Actions source in repository rules.
+6. Propose `Node Candidate E2E` as a required check from that verified source.
 
-Tracked in [SDK-5963](https://linear.app/rudderstack/issue/SDK-5963). Merge only after [central PR #32](https://github.com/rudderlabs/rudder-sdk-e2e-tests/pull/32), [shared-action PR #5](https://github.com/rudderlabs/github-action-sdk-e2e/pull/5), and the shared reusable workflow in [SDK-5977](https://linear.app/rudderstack/issue/SDK-5977) are reviewed and available. The current local validation wrapper must migrate to the reviewed shared workflow at a full commit SHA before merge. The existing action pin is a commit from PR #5 and must be verified or refreshed during that migration.
+Repository settings are unchanged. Do not claim enforcement until the final
+rule is applied and verified. PR validation can run before this workflow reaches
+`master`; automatic base-update validation starts after merge.
 
-Both validation dispatch jobs use `ubuntu-latest`. Hosted acceptance remains pending the next normal release. Do not create a release solely to test this wiring. The separate Release Please PR candidate gate remains tracked in [SDK-5980](https://linear.app/rudderstack/issue/SDK-5980).
+The rules read on 29 October 2026 require the native unit, build, and PR-title
+checks. They do not require `Node Candidate E2E`. The pilot check remains
+advisory until the rollout above is complete.
