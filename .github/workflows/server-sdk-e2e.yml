@@ -10,10 +10,6 @@ on:
         type: choice
         options: [reliability, full]
         default: reliability
-  workflow_call:
-    secrets:
-      RELEASE_PRIVATE_KEY:
-        required: true
 
 permissions:
   contents: read
