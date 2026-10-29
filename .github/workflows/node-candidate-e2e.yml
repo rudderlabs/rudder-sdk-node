@@ -1,0 +1,137 @@
+name: Node PR candidate E2E
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+  push:
+    branches: [master]
+
+permissions: {}
+
+jobs:
+  excluded:
+    # Eligible PRs must not receive a skipped fallback check on their head SHA.
+    # Their required check is published only for the validated merge SHA.
+    name: >-
+      ${{ github.event_name == 'pull_request' &&
+          (github.event.pull_request.head.repo.full_name != github.repository ||
+           github.event.pull_request.user.login == 'dependabot[bot]') &&
+          'Node Candidate E2E' || 'Report excluded PRs' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Report candidate applicability
+        env:
+          EXCLUDED: >-
+            ${{ github.event_name == 'pull_request' &&
+                (github.event.pull_request.head.repo.full_name != github.repository ||
+                 github.event.pull_request.user.login == 'dependabot[bot]') }}
+        run: |
+          if [ "$EXCLUDED" = 'true' ]; then
+            echo 'Central E2E validation is excluded for fork and Dependabot PRs. Native tests still apply.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Eligible candidates require the separate merge-commit validation check.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  candidates:
+    name: Select open PRs
+    if: >-
+      github.repository == 'rudderlabs/rudder-sdk-node' &&
+      (github.event_name != 'pull_request' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login != 'dependabot[bot]' &&
+        github.actor != 'dependabot[bot]'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      candidates: ${{ steps.select.outputs.candidates }}
+    steps:
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - name: Checkout gate code from this event
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select event PR or all open PRs after a base update
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 scripts/node_candidate_gate.py list
+
+  validate:
+    name: Validate PR candidate
+    needs: candidates
+    if: needs.candidates.outputs.candidates != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: write
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        candidate: ${{ fromJSON(needs.candidates.outputs.candidates) }}
+    steps:
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - name: Checkout gate code from this event
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select current merge candidate
+        id: candidate
+        env:
+          PR_NUMBER: ${{ matrix.candidate.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/node_candidate_gate.py select
+      - name: Create a central validation token
+        if: steps.candidate.outputs.eligible == 'true'
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PRIVATE_KEY }}
+          owner: rudderlabs
+          repositories: rudder-sdk-e2e-tests
+          permission-actions: write
+      - name: Validate the isolated PR merge candidate
+        if: steps.candidate.outputs.eligible == 'true'
+        id: e2e
+        uses: rudderlabs/github-action-sdk-e2e@b6de40cc65abe8ee6c6593aac1787aea746b671f # v1.0.0
+        with:
+          token: ${{ steps.token.outputs.token }}
+          suite: reliability
+          pr-number: ${{ matrix.candidate.number }}
+          merge-sha: ${{ steps.candidate.outputs.sha }}
+      - name: Recheck candidate after validation
+        if: steps.e2e.outcome == 'success'
+        id: completed
+        env:
+          PR_NUMBER: ${{ matrix.candidate.number }}
+          EVENT_SHA: ${{ steps.candidate.outputs.sha }}
+          VALIDATED_SHA: ${{ steps.candidate.outputs.sha }}
+          VALIDATION_RUN: ${{ steps.e2e.outputs.run-id }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/node_candidate_gate.py completed
+      - name: Publish candidate check
+        if: always() && steps.candidate.outputs.sha != ''
+        env:
+          PR_NUMBER: ${{ matrix.candidate.number }}
+          EVENT_SHA: ${{ steps.candidate.outputs.sha }}
+          PR_AUTHOR: ${{ steps.candidate.outputs.author }}
+          HEAD_REPO: ${{ steps.candidate.outputs.head-repo }}
+          VALIDATION_RESULT: ${{ steps.e2e.outcome }}
+          VALIDATED_SHA: ${{ steps.completed.outputs.sha }}
+          VALIDATION_RUN: ${{ steps.e2e.outputs.run-url }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/node_candidate_gate.py pr
