@@ -166,6 +166,25 @@ for ready in [True,None]:
   t.is(runPython(code), 'rejected\nrejected');
 });
 
+test('PR reruns cannot select a merge SHA newer than their event; base pushes can', (t) => {
+  const code = `import node_candidate_gate as g
+p={'number':42,'state':'open','mergeable':True,'base':{'ref':'master'},'head':{'sha':'c'*40,'repo':{'full_name':g.REPOSITORY}},'user':{'login':'release-bot'}}
+env={'PR_NUMBER':'42','GITHUB_REPOSITORY':g.REPOSITORY,'GH_TOKEN':'test','GITHUB_EVENT_NAME':'pull_request','GITHUB_REF':'refs/pull/42/merge','GITHUB_SHA':'a'*40}
+def api(path,token):
+ if path.startswith('/pulls/'): return p
+ if path.startswith('/git/ref/pull/'): return {'object':{'type':'commit','sha':'a'*40}}
+ if path=='/git/ref/heads/master': return {'object':{'sha':'b'*40}}
+ return {'parents':[{'sha':'b'*40},{'sha':'c'*40}]}
+print(g.current_candidate(env,api,sleep=lambda _:None)['sha'])
+for changed in [{'GITHUB_SHA':'d'*40},{'GITHUB_REF':'refs/pull/43/merge'}]:
+ try: g.current_candidate(dict(env,**changed),api,sleep=lambda _:None)
+ except ValueError: print('rejected')
+env.update(GITHUB_EVENT_NAME='push',GITHUB_REF='refs/heads/master',GITHUB_SHA='b'*40)
+print(g.current_candidate(env,api,sleep=lambda _:None)['sha'])
+`;
+  t.is(runPython(code), `${sha}\nrejected\nrejected\n${sha}`);
+});
+
 test('PR check publication is separate from reusable release validation', (t) => {
   const read = (name) => fs.readFileSync(path.join(root, '.github/workflows', name), 'utf8');
   const candidate = read('node-candidate-e2e.yml');
@@ -181,7 +200,7 @@ test('PR check publication is separate from reusable release validation', (t) =>
   t.true(candidate.includes('pr-number: ${{ matrix.candidate.number }}'));
   t.true(candidate.includes('merge-sha: ${{ steps.candidate.outputs.sha }}'));
   t.true(
-    candidate.includes('rudderlabs/github-action-sdk-e2e@4932729bffd737fc92f9cbed32115b2621da2bcd'),
+    candidate.includes('rudderlabs/github-action-sdk-e2e@b6de40cc65abe8ee6c6593aac1787aea746b671f'),
   );
   t.true(candidate.includes("if: steps.candidate.outputs.eligible == 'true'"));
   t.true(candidate.includes("if: always() && steps.candidate.outputs.sha != ''"));

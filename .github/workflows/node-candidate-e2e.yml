@@ -107,7 +107,7 @@ jobs:
       - name: Validate the isolated PR merge candidate
         if: steps.candidate.outputs.eligible == 'true'
         id: e2e
-        uses: rudderlabs/github-action-sdk-e2e@4932729bffd737fc92f9cbed32115b2621da2bcd # reviewed explicit PR inputs (#11)
+        uses: rudderlabs/github-action-sdk-e2e@b6de40cc65abe8ee6c6593aac1787aea746b671f # v1.0.0
         with:
           token: ${{ steps.token.outputs.token }}
           suite: reliability

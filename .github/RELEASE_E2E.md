@@ -15,15 +15,16 @@ An actor check alone never grants an exclusion. If Dependabot triggers an
 otherwise eligible PR, that run cannot validate or report an exclusion.
 
 The caller sends the PR number and current merge SHA to shared-action commit
-`4932729bffd737fc92f9cbed32115b2621da2bcd` (reviewed and merged in shared-action #11).
+`b6de40cc65abe8ee6c6593aac1787aea746b671f` (shared-action v1.0.0).
 The central runner executes candidate code in its isolated reliability job.
 Candidate code does not receive workspace credentials or the caller's token.
 
 A push to `master` selects all open PRs again. The selector waits for GitHub's
 merge commit and checks both parents against current `master` and the PR head.
 The workflow checks the same identity after validation and before publishing
-its result. An obsolete run cannot approve a newer SHA. Rerunning a workflow
-selects the current candidate, including after base updates.
+its result. An obsolete run cannot approve a newer SHA. A PR event must still
+match its original merge SHA. A rerun of a stale PR event fails before token
+creation. After a base update, the master-push workflow validates the new candidate.
 
 ## Check reporting and exclusions
 
@@ -74,3 +75,7 @@ Tracked in [SDK-5980](https://linear.app/rudderstack/issue/SDK-5980).
 Repository settings are unchanged. Do not claim enforcement until the final
 rule is applied and verified. PR validation can run before this workflow reaches
 `master`; automatic base-update validation starts after merge.
+
+The rules read on 29 October 2026 require the native unit, build, and PR-title
+checks. They do not require `Node Candidate E2E`. The pilot check remains
+advisory until the rollout above is complete.

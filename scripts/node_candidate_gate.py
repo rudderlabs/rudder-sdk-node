@@ -15,7 +15,7 @@ SHA = re.compile(r"[0-9a-f]{40}\Z")
 def github(path, token):
     request = Request(f"https://api.github.com/repos/{REPOSITORY}{path}", headers={
         "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2026-03-10",
-        "Authorization": f"Bearer {token}",
+        "Authorization": f"Bearer {token}", "Cache-Control": "no-cache",
     })
     with urlopen(request, timeout=30) as response:
         return json.load(response)
@@ -153,6 +153,10 @@ def current_candidate(env, api=github, sleep=time.sleep):
             parents = [parent["sha"] for parent in commit.get("parents", [])]
             if parents == [master, pr["head"]["sha"]]:
                 merge_sha(pr)
+                if env.get("GITHUB_EVENT_NAME") == "pull_request" and (
+                        env.get("GITHUB_REF") != f"refs/pull/{number}/merge"
+                        or env.get("GITHUB_SHA") != sha):
+                    raise ValueError("PR event is stale; a fresh PR or master-push run must validate the current candidate")
                 return {"sha": sha, "head-repo": pr["head"]["repo"]["full_name"],
                         "author": pr["user"]["login"],
                         "eligible": str(pr["head"]["repo"]["full_name"] == REPOSITORY
