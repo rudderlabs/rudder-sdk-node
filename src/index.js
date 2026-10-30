@@ -31,6 +31,62 @@ const BATCH_ENVELOPE_BYTES = Buffer.byteLength(
 // stops instead of retrying the re-queued events straight away.
 const BATCH_NOT_SENT = Symbol('batch not sent');
 
+// Copy diagnostic data only. Live transports, streams and functions are not snapshots.
+function diagnosticSnapshot(value, seen = new WeakMap()) {
+  if (!value || typeof value !== 'object') {
+    return typeof value === 'function' ? undefined : value;
+  }
+  if (Buffer.isBuffer(value)) return Buffer.from(value);
+  if (value instanceof Date) return new Date(value.getTime());
+  if (seen.has(value)) return seen.get(value);
+  const isArray = Array.isArray(value);
+  if (
+    !isArray &&
+    !(value instanceof axios.AxiosHeaders) &&
+    ![Object.prototype, null].includes(Object.getPrototypeOf(value))
+  ) {
+    return undefined;
+  }
+  const snapshot = isArray ? [] : {};
+  seen.set(value, snapshot);
+  for (const [key, entry] of Object.entries(value)) {
+    const copy = diagnosticSnapshot(entry, seen);
+    if (copy !== undefined) {
+      Object.defineProperty(snapshot, key, {
+        value: copy,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    }
+  }
+  return snapshot;
+}
+
+function requestSnapshot(config) {
+  if (!config || typeof config !== 'object') return undefined;
+  // Omit transport fields even when a custom implementation uses plain objects.
+  const omitted = new Set([
+    'auth',
+    'httpAgent',
+    'httpsAgent',
+    'transport',
+    'adapter',
+    'env',
+    'signal',
+    'cancelToken',
+  ]);
+  const snapshot = diagnosticSnapshot(
+    Object.fromEntries(Object.entries(config).filter(([key]) => !omitted.has(key))),
+  );
+  if (snapshot.headers) {
+    Object.keys(snapshot.headers)
+      .filter((name) => name.toLowerCase() === 'authorization')
+      .forEach((name) => delete snapshot.headers[name]);
+  }
+  return snapshot;
+}
+
 /**
  * Removes the write key from an axios error in place so it is safe to log or dump,
  * keeping its class, message, code and response intact.
@@ -43,15 +99,7 @@ function redactCredentials(error) {
     if (!source || typeof source !== 'object') {
       return;
     }
-    const { config } = source;
-    if (config && typeof config === 'object') {
-      delete config.auth;
-      if (config.headers && typeof config.headers === 'object') {
-        Object.keys(config.headers)
-          .filter((name) => name.toLowerCase() === 'authorization')
-          .forEach((name) => delete config.headers[name]);
-      }
-    }
+    if (source.config) source.config = requestSnapshot(source.config);
     // The raw request holds the Authorization header; keep it reachable but out of dumps and JSON.
     if (Object.getOwnPropertyDescriptor(source, 'request')?.configurable) {
       Object.defineProperty(source, 'request', { enumerable: false });
@@ -62,11 +110,12 @@ function redactCredentials(error) {
 
 // Retry hooks get snapshots so redaction cannot remove credentials from the next request.
 function retryErrorSnapshot(error) {
-  const config = error.config && { ...error.config, headers: { ...error.config.headers } };
-  const response = error.response && { ...error.response, config, request: undefined };
-  return redactCredentials(
-    new axios.AxiosError(error.message, error.code, config, undefined, response),
-  );
+  const config = requestSnapshot(error.config);
+  const response =
+    error.response &&
+    diagnosticSnapshot({ ...error.response, config: undefined, request: undefined });
+  if (response) response.config = config;
+  return new axios.AxiosError(error.message, error.code, config, undefined, response);
 }
 
 function safeRetryConfig(config = {}) {
@@ -333,6 +382,7 @@ class Analytics {
                   // if not retryable, mark the job failed and to failed queue for user to retry later
                   // Clean up callbacks after non-retryable failure
                   self.pCallbacksMap.delete(jobData.jobId);
+                  redactCredentials(err);
                   rdone(callbacks, err);
                   done(err);
                 }
