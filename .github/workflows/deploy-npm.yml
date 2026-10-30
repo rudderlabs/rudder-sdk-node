@@ -34,7 +34,6 @@ jobs:
     outputs:
       version: ${{ steps.release.outputs.version }}
       uploaded: ${{ steps.publish.outputs.uploaded }}
-      candidate-result: ${{ steps.e2e.outcome }}
       publish-result: ${{ steps.publish.outcome }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -82,34 +81,12 @@ jobs:
           npm ci
           npm run package
 
-      - name: Create a central validation token
-        id: token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_PRIVATE_KEY }}
-          owner: rudderlabs
-          repositories: rudder-sdk-e2e-tests
-          permission-actions: write
-
-      - name: Validate the exact source candidate and retain the tested package
-        id: e2e
-        uses: rudderlabs/github-action-sdk-e2e@b6de40cc65abe8ee6c6593aac1787aea746b671f # v1.0.0
-        with:
-          token: ${{ steps.token.outputs.token }}
-          suite: full
-
       - name: Publish package to NPM
         id: publish
         env:
           HUSKY: 0
-          CANDIDATE_REPORT: ${{ steps.e2e.outputs.report }}
-          VALIDATED_SHA: ${{ steps.e2e.outputs.validated-sha }}
-          PACKAGE_FILE: ${{ steps.e2e.outputs.package-file }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          node scripts/verify-release-candidate.js
-          npm publish "$PACKAGE_FILE" --provenance --ignore-scripts
+          npm publish ./dist --provenance --ignore-scripts
           echo 'uploaded=true' >> "$GITHUB_OUTPUT"
 
   published-e2e:
@@ -135,7 +112,6 @@ jobs:
       RELEASE_TAG: ${{ github.ref_name }}
       RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      CANDIDATE_RESULT: ${{ needs.deploy-tag.outputs.candidate-result || 'skipped' }}
       PUBLISH_RESULT: ${{ needs.deploy-tag.outputs.publish-result || 'skipped' }}
       UPLOADED: ${{ needs.deploy-tag.outputs.uploaded }}
       ACCEPTANCE_RESULT: ${{ needs.published-e2e.result }}
@@ -153,14 +129,12 @@ jobs:
             status='accepted'
           elif [[ "$UPLOADED" == true ]]; then
             status='published; validation failed or incomplete'
-          elif [[ "$PUBLISH_RESULT" == skipped && "$CANDIDATE_RESULT" != success ]]; then
-            status='publication not attempted; candidate validation failed or incomplete'
           else
             status='publication failed or unconfirmed; acceptance incomplete'
           fi
           printf 'Node.js SDK %s: %s\n' "$RELEASE_TAG" "$status" >> "$GITHUB_STEP_SUMMARY"
-          printf 'Candidate E2E: %s; npm publication: %s; published-package E2E delivery and cleanup: %s.\n' \
-            "$CANDIDATE_RESULT" "$PUBLISH_RESULT" "$ACCEPTANCE_RESULT" >> "$GITHUB_STEP_SUMMARY"
+          printf 'npm publication: %s; published-package E2E delivery and cleanup: %s.\n' \
+            "$PUBLISH_RESULT" "$ACCEPTANCE_RESULT" >> "$GITHUB_STEP_SUMMARY"
           echo 'A failed acceptance does not roll back an uploaded package. Retry published-sdk-e2e.yml at the same tag; the retry does not publish or reannounce.' >> "$GITHUB_STEP_SUMMARY"
           jq -cn --arg channel "$SLACK_CHANNEL_ID" --arg tag "$RELEASE_TAG" \
             --arg date "$(date -u +%Y-%m-%d)" --arg status "$status" \
@@ -192,11 +166,11 @@ jobs:
           fi
           registry_url="https://www.npmjs.com/package/@rudderstack/rudder-sdk-node/v/${RELEASE_TAG#v}"
           jq -cn --arg channel "$SLACK_CHANNEL_ID" --arg ts "$ROOT_TS" --arg status "$RELEASE_STATUS" \
-            --arg candidate "$CANDIDATE_RESULT" --arg publish "$PUBLISH_RESULT" --arg uploaded "${UPLOADED:-unconfirmed}" \
+            --arg publish "$PUBLISH_RESULT" --arg uploaded "${UPLOADED:-unconfirmed}" \
             --arg acceptance "$ACCEPTANCE_RESULT" --arg registry "$registry_url" --arg release "$RELEASE_URL" \
             --arg run "$RUN_URL" --arg central "$CENTRAL_RUN_URL" \
             '{channel: $channel, thread_ts: $ts, reply_broadcast: false, unfurl_links: false, unfurl_media: false,
-              text: ("*" + $status + "*\nCandidate E2E: " + $candidate + "; npm publication: " + $publish + "; upload confirmed: " + $uploaded + "; full published E2E delivery and cleanup: " + $acceptance + ".\n<" + $registry + "|Exact npm version> | <" + $release + "|Release> | <" + $run + "|Release workflow>" + (if $central != "" then " | <" + $central + "|Central E2E run>" else "" end))}' \
+              text: ("*" + $status + "*\nnpm publication: " + $publish + "; upload confirmed: " + $uploaded + "; full published E2E delivery and cleanup: " + $acceptance + ".\n<" + $registry + "|Exact npm version> | <" + $release + "|Release> | <" + $run + "|Release workflow>" + (if $central != "" then " | <" + $central + "|Central E2E run>" else "" end))}' \
             | sed 's/^/payload=/' >> "$GITHUB_OUTPUT"
 
       - name: Post release details in the thread

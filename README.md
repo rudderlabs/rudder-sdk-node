@@ -80,7 +80,8 @@ Below parameters are optional and can be passed during SDK initialization.
 | `gzip`                 | Boolean  | true                            | Whether to compress request with gzip or not                                                      |
 
 Retry hooks in `axiosRetryConfig` receive credential-redacted error and request snapshots.
-The snapshots omit authentication and raw request objects. Changes to snapshot fields do not
+The snapshots omit authentication, raw requests, agents, functions, and other live transport objects.
+Payload buffers and nested diagnostic data are independent copies. Changes to snapshot fields do not
 change the live retry request. Retry decisions, delays, and asynchronous hook results still apply.
 
 ## Supported calls

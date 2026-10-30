@@ -4,8 +4,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const crypto = require('node:crypto');
-const { verifyCandidate } = require('../scripts/verify-release-candidate');
 
 const workflow = (name) =>
   fs.readFileSync(path.join(__dirname, '../.github/workflows', `${name}.yml`), 'utf8');
@@ -35,7 +33,6 @@ const fixture = (t, overrides = {}) => {
     RELEASE_URL: 'https://github.com/rudderlabs/rudder-sdk-node/releases/tag/v3.0.17',
     RUN_URL: 'https://github.com/rudderlabs/rudder-sdk-node/actions/runs/42',
     CENTRAL_RUN_URL: 'https://github.com/rudderlabs/rudder-sdk-e2e-tests/actions/runs/43',
-    CANDIDATE_RESULT: 'success',
     PUBLISH_RESULT: 'success',
     UPLOADED: 'true',
     ACCEPTANCE_RESULT: 'success',
@@ -89,16 +86,6 @@ const outcomes = [
     'cancelled publisher',
     { PUBLISH_RESULT: 'cancelled', UPLOADED: '', ACCEPTANCE_RESULT: 'skipped' },
     'publication failed or unconfirmed; acceptance incomplete',
-  ],
-  [
-    'failed candidate',
-    {
-      CANDIDATE_RESULT: 'failure',
-      PUBLISH_RESULT: 'skipped',
-      UPLOADED: '',
-      ACCEPTANCE_RESULT: 'skipped',
-    },
-    'publication not attempted; candidate validation failed or incomplete',
   ],
   [
     'unconfirmed upload',
@@ -177,13 +164,8 @@ test('publication and notification preserve the full acceptance dependency chain
   const acceptance = deploy.split('\n  published-e2e:\n')[1].split('\n  notify-slack:\n')[0];
   const notify = deploy.split('\n  notify-slack:\n')[1];
   t.true(publisher.includes('needs: validate-ref'));
-  t.true(publisher.includes('suite: full'));
-  t.true(publisher.includes('id: e2e'));
-  t.true(
-    publisher.includes(
-      'node scripts/verify-release-candidate.js\n          npm publish "$PACKAGE_FILE" --provenance --ignore-scripts',
-    ),
-  );
+  t.false(publisher.includes('github-action-sdk-e2e'));
+  t.true(publisher.includes('npm publish ./dist --provenance --ignore-scripts'));
   t.false(publisher.includes('cd dist'));
   t.false(publisher.includes('          ref:'));
   t.false(deploy.includes('workflow_dispatch:'));
@@ -195,7 +177,6 @@ test('publication and notification preserve the full acceptance dependency chain
     ),
   );
   t.true(notify.includes('needs: [validate-ref, deploy-tag, published-e2e]'));
-  t.true(notify.includes('needs.deploy-tag.outputs.candidate-result'));
   t.false(notify.includes('if: needs.published-e2e.result'));
   t.true(notify.includes("if: steps.thread.outputs.payload != ''"));
   t.false(notify.includes('payload-templated: true'));
@@ -209,96 +190,13 @@ test('validation-only retries delegate to a pinned shared workflow without publi
   t.false(/npm publish|slack-github-action|id-token: write|actions\/checkout/.test(published));
   t.true(
     published.includes(
-      'uses: rudderlabs/github-action-sdk-e2e/.github/workflows/published-sdk-e2e.yml@b6de40cc65abe8ee6c6593aac1787aea746b671f',
+      'uses: rudderlabs/github-action-sdk-e2e/.github/workflows/published-sdk-e2e.yml@2d1262f86e519195dc723a8d244a8ecc8bcedb21',
     ),
   );
   t.true(published.includes('package-version: ${{ inputs.package-version || github.ref_name }}'));
   t.true(published.includes('release-app-client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}'));
   t.true(published.includes('value: ${{ jobs.validate.outputs.run-url }}'));
   t.false(published.includes('cancel-in-progress: true'));
-});
-
-test('publisher accepts only the exact tested bytes and current source release identity', (t) => {
-  const env = fixture(t);
-  const packageFile = path.join(path.dirname(env.GITHUB_OUTPUT), 'candidate.tgz');
-  const bytes = Buffer.from('opaque native package bytes');
-  fs.writeFileSync(packageFile, bytes);
-  const sha = 'a'.repeat(40);
-  const tree = 'b'.repeat(40);
-  const input = {
-    sha,
-    validatedSha: sha,
-    head: sha,
-    tree,
-    version: '3.0.17',
-    tag: 'v3.0.17',
-    packageFile,
-    refs: `${sha}\trefs/heads/master\n${sha}\trefs/tags/v3.0.17\n`,
-    report: {
-      schema_version: 1,
-      sdk: 'node',
-      selection: 'candidate',
-      repository: 'rudderlabs/rudder-sdk-node',
-      package: '@rudderstack/rudder-sdk-node',
-      commit: sha,
-      version: '3.0.17',
-      delivery_passed: true,
-      restoration_verified: true,
-      lock_released: true,
-      artifact: {
-        source_tree: tree,
-        package_file: 'candidate.tgz',
-        package_sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
-        package_integrity: `sha512-${crypto.createHash('sha512').update(bytes).digest('base64')}`,
-      },
-    },
-  };
-  t.notThrows(() => verifyCandidate(input));
-  t.notThrows(() =>
-    verifyCandidate({
-      ...input,
-      refs:
-        input.refs.replace(`${sha}\trefs/tags/`, `${'c'.repeat(40)}\trefs/tags/`) +
-        `${sha}\trefs/tags/v3.0.17^{}\n`,
-    }),
-  );
-  for (const change of [
-    { sha: 'c'.repeat(40) },
-    { validatedSha: '' },
-    { head: 'c'.repeat(40) },
-    { tree: 'c'.repeat(40) },
-    { version: '3.0.18' },
-    { tag: 'v3.0.18' },
-    { packageFile: '' },
-    { refs: input.refs.replaceAll(sha, 'c'.repeat(40)) },
-    { refs: `${sha}\trefs/heads/master` },
-  ]) {
-    t.throws(() => verifyCandidate({ ...input, ...change }));
-  }
-  for (const [key, value] of Object.entries({
-    schema_version: 2,
-    sdk: 'go',
-    selection: 'published',
-    repository: 'fork/node',
-    package: 'another-package',
-    commit: 'c'.repeat(40),
-    version: '3.0.18',
-    delivery_passed: false,
-    restoration_verified: false,
-    lock_released: false,
-  })) {
-    t.throws(() => verifyCandidate({ ...input, report: { ...input.report, [key]: value } }));
-  }
-  for (const key of ['package_sha256', 'package_integrity', 'package_file']) {
-    t.throws(() =>
-      verifyCandidate({
-        ...input,
-        report: { ...input.report, artifact: { ...input.report.artifact, [key]: 'invalid' } },
-      }),
-    );
-  }
-  fs.writeFileSync(packageFile, 'changed package');
-  t.throws(() => verifyCandidate(input));
 });
 
 for (const [name, overrides, accepted] of [
