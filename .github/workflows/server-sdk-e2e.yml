@@ -3,40 +3,30 @@ name: Server SDK E2E
 on:
   pull_request:
     branches: [master]
-    types: [opened, reopened, synchronize]
-  push:
-    branches: [master]
-  workflow_dispatch:
-    inputs:
-      suite:
-        description: reliability is local delivery; full also uses a live CI pipeline
-        type: choice
-        options: [reliability, full]
-        default: reliability
-  workflow_call:
-    secrets:
-      RELEASE_PRIVATE_KEY:
-        required: true
+    types: [opened, reopened, synchronize, ready_for_review]
 
-permissions:
-  contents: read
+permissions: {}
 
-# Independent requests must not cancel earlier merge or release validations.
+# Central live runs own cleanup and are never cancelled by a newer PR update.
+# A stale candidate fails the shared freshness check; the updated PR gets a new run.
 jobs:
-  validate:
-    # Fork and Dependabot PRs cannot access the release App secret.
+  node-sdk-candidate-gate:
+    name: Node SDK candidate gate
     if: >-
-      github.event_name != 'pull_request' ||
-      (github.event.pull_request.head.repo.full_name == github.repository &&
-       github.actor != 'dependabot[bot]' &&
-       github.event.pull_request.user.login != 'dependabot[bot]')
-    runs-on: ubuntu-24.04
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.actor != 'dependabot[bot]' &&
+      startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-latest
     timeout-minutes: 55
+    permissions:
+      contents: read
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
+      # Do not check out or execute PR code in this credential-bearing job.
       - name: Create a central validation token
         id: token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -46,9 +36,8 @@ jobs:
           owner: rudderlabs
           repositories: rudder-sdk-e2e-tests
           permission-actions: write
-      - name: Detect this repository, dispatch, and wait for its result
-        uses: rudderlabs/github-action-sdk-e2e@9bcd97f1b28b1f2c3c7726ccae1bf435f4acf9c4
+      - name: Validate the candidate through the shared harness
+        uses: rudderlabs/github-action-sdk-e2e@2d1262f86e519195dc723a8d244a8ecc8bcedb21 # full live E2E with per-run resource cleanup
         with:
           token: ${{ steps.token.outputs.token }}
-          # PR candidates run without live pipeline credentials.
-          suite: ${{ github.event_name == 'pull_request' && 'reliability' || inputs.suite || vars.SDK_E2E_SUITE || 'reliability' }}
+          suite: full

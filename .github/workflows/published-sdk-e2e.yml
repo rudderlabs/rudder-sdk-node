@@ -1,0 +1,31 @@
+name: Published Node SDK E2E
+
+on:
+  workflow_call:
+    outputs:
+      run-url:
+        description: Exact central validation run, when available
+        value: ${{ jobs.validate.outputs.run-url }}
+    inputs:
+      package-version:
+        description: Exact version validated by the publisher
+        required: true
+        type: string
+    secrets:
+      RELEASE_PRIVATE_KEY:
+        required: true
+  # Retry validation at an existing release tag. This workflow cannot publish.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Do not cancel live validation; the central workflow owns locking and cleanup.
+jobs:
+  validate:
+    uses: rudderlabs/github-action-sdk-e2e/.github/workflows/published-sdk-e2e.yml@2d1262f86e519195dc723a8d244a8ecc8bcedb21 # full live E2E with per-run resource cleanup
+    with:
+      package-version: ${{ inputs.package-version || github.ref_name }}
+      release-app-client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+    secrets:
+      RELEASE_PRIVATE_KEY: ${{ secrets.RELEASE_PRIVATE_KEY }}
