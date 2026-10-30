@@ -1,29 +1,32 @@
 name: Server SDK E2E
 
 on:
-  push:
+  pull_request:
     branches: [master]
-  workflow_dispatch:
-    inputs:
-      suite:
-        description: reliability is local delivery; full also uses a live CI pipeline
-        type: choice
-        options: [reliability, full]
-        default: reliability
+    types: [opened, reopened, synchronize, ready_for_review]
 
-permissions:
-  contents: read
+permissions: {}
 
-# Independent requests must not cancel earlier merge or release validations.
+# Central live runs own cleanup and are never cancelled by a newer PR update.
+# A stale candidate fails the shared freshness check; the updated PR gets a new run.
 jobs:
-  validate:
+  node-sdk-candidate-gate:
+    name: Node SDK candidate gate
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.actor != 'dependabot[bot]' &&
+      startsWith(github.head_ref, 'release-please--')
     runs-on: ubuntu-latest
     timeout-minutes: 55
+    permissions:
+      contents: read
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
+      # Do not check out or execute PR code in this credential-bearing job.
       - name: Create a central validation token
         id: token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -33,8 +36,8 @@ jobs:
           owner: rudderlabs
           repositories: rudder-sdk-e2e-tests
           permission-actions: write
-      - name: Detect this repository, dispatch, and wait for its result
-        uses: rudderlabs/github-action-sdk-e2e@b6de40cc65abe8ee6c6593aac1787aea746b671f # v1.0.0
+      - name: Validate the candidate through the shared harness
+        uses: rudderlabs/github-action-sdk-e2e@2d1262f86e519195dc723a8d244a8ecc8bcedb21 # full live E2E with per-run resource cleanup
         with:
           token: ${{ steps.token.outputs.token }}
-          suite: ${{ inputs.suite || vars.SDK_E2E_SUITE || 'reliability' }}
+          suite: full
