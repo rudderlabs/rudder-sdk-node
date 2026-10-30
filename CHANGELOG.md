@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.0.18](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.17...v3.0.18) (2026-10-30)
+
+
+### Bug Fixes
+
+* isolate retry snapshots and redact persistent queue errors ([#506](https://github.com/rudderlabs/rudder-sdk-node/issues/506)) ([5f0a626](https://github.com/rudderlabs/rudder-sdk-node/commit/5f0a626f6be88fe6acef04cb2b65f26160b0f9c7))
+* redact credentials from transport errors and retry hooks ([#484](https://github.com/rudderlabs/rudder-sdk-node/issues/484)) ([de4bf74](https://github.com/rudderlabs/rudder-sdk-node/commit/de4bf742b3ed3a095a24abd00975c9a0edef3ccf))
+
+
+### Miscellaneous
+
+* retain resolved example dependency inventories ([#507](https://github.com/rudderlabs/rudder-sdk-node/issues/507)) ([0a84474](https://github.com/rudderlabs/rudder-sdk-node/commit/0a844745a189f0e9b6d3dfede8f021bc63b4977c))
+* run live e2e on release pull requests ([#509](https://github.com/rudderlabs/rudder-sdk-node/issues/509)) ([2783d5f](https://github.com/rudderlabs/rudder-sdk-node/commit/2783d5f4681629e6e4faff7f002bfe628568b9ce))
+* validate current pr merge candidates after base updates ([#504](https://github.com/rudderlabs/rudder-sdk-node/issues/504)) ([94d104f](https://github.com/rudderlabs/rudder-sdk-node/commit/94d104fab7429766ae3a629e2c07d24e83174d63))
+* validate the exact published node package after release ([#502](https://github.com/rudderlabs/rudder-sdk-node/issues/502)) ([54f600e](https://github.com/rudderlabs/rudder-sdk-node/commit/54f600e074e4eada31864277c93cbad3434f67d6))
+
 ## [3.0.17](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.16...v3.0.17) (2026-10-28)
 
 
