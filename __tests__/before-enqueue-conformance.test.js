@@ -109,9 +109,6 @@ const mutate = (edit) => (event) => {
   edit(event);
   return event;
 };
-const oversize = mutate((event) => {
-  event.properties.blob = MARKER.repeat(2000);
-});
 const cases = [
   { id: 'enriched_input', hook: (event) => event },
   {
@@ -242,8 +239,6 @@ const cases = [
     }),
     level: 'error',
   },
-  { id: 'post_hook_oversize', hook: oversize, level: 'error' },
-  { id: 'post_hook_oversize_drop', hook: oversize, policy: 'drop', none: true, level: 'error' },
   {
     id: 'unserialisable_output',
     hook: mutate((e) => {

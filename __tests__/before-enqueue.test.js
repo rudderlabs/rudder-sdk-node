@@ -467,7 +467,7 @@ test('post-hook validation: with drop, an invalid event is dropped', async (t) =
   cleanup(client);
 });
 
-test("size: a hook that grows the event past 32KB is a hook error; 'send' sends the original", async (t) => {
+test('size: an event the hook grows past 32KB is sent with the usual warning', async (t) => {
   const { client, post } = createClient({
     beforeEnqueue: (event) => {
       event.properties.blob = 'a'.repeat(33 * 1024);
@@ -478,30 +478,9 @@ test("size: a hook that grows the event past 32KB is a hook error; 'send' sends 
   client.track({ userId: 'u1', event: 'Big', properties: {} });
   await client.flush();
 
-  t.deepEqual(sentBatches(post)[0][0].properties, {});
-  t.true(client.logger.error.calledOnce);
-  t.regex(
-    client.logger.error.firstCall.args[0],
-    /, sending the original event\. AssertionError \[ERR_ASSERTION\]: Your message must be < 32kb\.$/,
-  );
-  t.false(client.logger.info.called);
-  cleanup(client);
-});
-
-test("size: a hook that grows the event past 32KB drops it with 'drop'", async (t) => {
-  const { client, post } = createClient({
-    beforeEnqueue: (event) => {
-      event.properties.blob = 'a'.repeat(33 * 1024);
-      return event;
-    },
-    beforeEnqueueOnError: 'drop',
-  });
-
-  client.track({ userId: 'u1', event: 'Big', properties: {} });
-  await client.flush();
-
-  t.false(post.called);
-  t.true(client.logger.error.calledOnce);
+  t.is(sentBatches(post)[0][0].properties.blob.length, 33 * 1024);
+  t.false(client.logger.error.called);
+  t.true(client.logger.info.calledOnceWithExactly(SIZE_WARNING));
   cleanup(client);
 });
 
@@ -512,7 +491,7 @@ test('size: an oversized event passed through unchanged falls back to the usual 
   await client.flush();
 
   t.is(sentBatches(post)[0][0].properties.blob.length, 33 * 1024);
-  t.true(client.logger.error.calledOnce);
+  t.false(client.logger.error.called);
   t.true(client.logger.info.calledOnceWithExactly(SIZE_WARNING));
   cleanup(client);
 });

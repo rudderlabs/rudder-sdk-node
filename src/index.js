@@ -814,8 +814,8 @@ class Analytics {
         componentType(event) === 'object',
         'beforeEnqueue must return an event object or null.',
       );
-      // Per-type rules and size; computing the size also rejects cycles
-      looselyValidate(event, type);
+      // Same validation as the call itself; computing the size also rejects cycles
+      this._validate(event, type, true);
       const { channel } = message;
       const { library } = message.context;
       if (
