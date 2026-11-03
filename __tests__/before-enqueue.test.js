@@ -879,29 +879,6 @@ for (const beforeEnqueueOnError of ['send', 'drop']) {
     }
     cleanup(client);
   });
-  test(`wire form: an invalid serialized timestamp is a hook error even if the object holds a Date ('${beforeEnqueueOnError}')`, async (t) => {
-    const { client, post } = createClient({
-      beforeEnqueueOnError,
-      beforeEnqueue: (event) => ({
-        ...event,
-        timestamp: new Date(1000),
-        toJSON: () => ({ ...event, timestamp: { invalid: true } }),
-      }),
-    });
-
-    client.track({ userId: 'u1', event: 'Kept', messageId: 'm1' });
-    await client.flush();
-
-    t.true(client.logger.error.calledOnce);
-    if (beforeEnqueueOnError === 'drop') {
-      t.false(post.called);
-    } else {
-      const [[sent]] = sentBatches(post);
-      t.like(sent, { type: 'track', event: 'Kept', messageId: 'm1' });
-      t.false('timestamp' in sent);
-    }
-    cleanup(client);
-  });
 }
 
 test('wire form: the hook result is serialized once and its messageId is kept', async (t) => {

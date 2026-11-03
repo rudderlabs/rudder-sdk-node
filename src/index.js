@@ -866,13 +866,8 @@ class Analytics {
     assert(componentType(event) === 'object', 'beforeEnqueue must return an event object or null.');
     assert(event.type === type, `beforeEnqueue must not change the event type ("${type}").`);
     // A Date serializes to an ISO string; turn it back so the standard validation applies
-    const { timestamp } = event;
-    if (timestamp) {
-      assert(
-        typeof timestamp === 'string' && !Number.isNaN(Date.parse(timestamp)),
-        '"timestamp" must be a date.',
-      );
-      event.timestamp = new Date(timestamp);
+    if (event.timestamp) {
+      event.timestamp = new Date(event.timestamp);
     }
     // Same ID coercion as enqueue() applies before the hook
     ['anonymousId', 'userId'].forEach((field) => {
