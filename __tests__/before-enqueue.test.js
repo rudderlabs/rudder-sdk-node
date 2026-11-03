@@ -103,7 +103,7 @@ for (const beforeEnqueueOnError of ['send', 'drop']) {
         assert.equal(client.queue.length, ${beforeEnqueueOnError === 'send' ? 1 : 0});
         assert.equal(logs.length, 1);
         assert.ok(!logs[0].includes('secret-pii-value'));
-        if (${JSON.stringify(scenario)} !== 'async rejection') assert.ok(logs[0].includes('(object)'));
+        if (${JSON.stringify(scenario)} !== 'async rejection') assert.ok(logs[0].endsWith('. [object Object]'));
         setImmediate(() => {
           assert.equal(unhandled, 0);
           console.log('contained');
@@ -374,7 +374,7 @@ test("hook error: a throwing hook sends the original event with 'send' (default)
   t.deepEqual(client.logger.error.firstCall.args.length, 1);
   t.regex(
     client.logger.error.firstCall.args[0],
-    /^beforeEnqueue failed for track event [\da-f-]{36} \(Error\), sending the original event\.$/,
+    /^beforeEnqueue failed for track event [\da-f-]{36}, sending the original event\. Error: boom$/,
   );
   cleanup(client);
 });
@@ -401,7 +401,7 @@ test("hook error: a throwing hook drops the event with 'drop'", async (t) => {
   t.true(
     client.logger.error.calledWith(
       Sinon.match(
-        /^beforeEnqueue failed for track event [\da-f-]{36} \(Error\), dropping the event\.$/,
+        /^beforeEnqueue failed for track event [\da-f-]{36}, dropping the event\. Error: boom$/,
       ),
     ),
   );
@@ -590,7 +590,7 @@ test("size: a hook that grows the event past 32KB is a hook error; 'send' sends 
   t.true(client.logger.error.calledOnce);
   t.regex(
     client.logger.error.firstCall.args[0],
-    /\(AssertionError\), sending the original event\.$/,
+    /, sending the original event\. AssertionError \[ERR_ASSERTION\]: beforeEnqueue returned \d+ bytes; events must be < 32kb\.$/,
   );
   t.false(client.logger.info.called);
   cleanup(client);
@@ -1052,77 +1052,80 @@ const loggedArgs = (client) =>
     .flatMap((call) => call.args)
     .map((arg) => (arg instanceof Error ? `${arg.message}\n${arg.stack}` : JSON.stringify(arg)));
 
-test('logging: a hook error logs only the error name, not its message or stack', (t) => {
-  for (const [thrown, name] of [
-    [new TypeError(`bad value ${SECRET}`), 'TypeError'],
-    [`raw string ${SECRET}`, 'string'],
-    [Object.create(null), 'object'],
-  ]) {
-    const { client } = createClient({
-      beforeEnqueue: () => {
-        throw thrown;
-      },
-    });
-    client.track({ userId: 'u1', event: 'E' });
-    t.is(client.logger.error.callCount, 1);
-    t.deepEqual(client.logger.error.firstCall.args.length, 1);
-    t.true(client.logger.error.firstCall.args[0].includes(`(${name})`));
-    t.false(client.logger.error.firstCall.args[0].includes(SECRET));
-    cleanup(client);
-  }
-});
-
-test('logging: a hook error label never reads err.name, which can carry the event', (t) => {
-  class HookError extends RangeError {}
-  const throwingName = new Error('x');
-  Object.defineProperty(throwingName, 'name', {
-    get() {
-      throw new Error('getter');
-    },
-  });
-  const throwingProxy = new Proxy(
-    {},
-    {
-      get() {
-        throw new Error('get trap');
-      },
-      getPrototypeOf() {
-        throw new Error('getPrototypeOf trap');
-      },
-    },
-  );
-  const cases = [
-    // The thrown page event's own `name` is the page name
-    [(event) => event, 'object'],
-    [(event) => Object.assign(new TypeError('x'), { name: JSON.stringify(event) }), 'TypeError'],
-    [(event) => ({ name: JSON.stringify(event) }), 'object'],
-    [() => new HookError('x'), 'RangeError'],
-    [() => throwingName, 'Error'],
-    [() => throwingProxy, 'object'],
-  ];
-  for (const [toThrow, label] of cases) {
+test('logging: a hook error message appears in the log as thrown', (t) => {
+  for (const thrown of [new TypeError('bad hook value'), 'raw hook failure']) {
     for (const beforeEnqueueOnError of ['send', 'drop']) {
       const { client } = createClient({
         beforeEnqueueOnError,
-        beforeEnqueue: (event) => {
-          throw toThrow(event);
+        beforeEnqueue: () => {
+          throw thrown;
         },
       });
-      t.notThrows(() => client.page({ userId: 'u1', name: SECRET, properties: { email: SECRET } }));
-      t.is(client.logger.error.callCount, 1);
-      const [line] = client.logger.error.firstCall.args;
-      t.true(line.includes(`(${label})`), line);
-      t.false(line.includes(SECRET));
-      t.is(client.queue.length, beforeEnqueueOnError === 'send' ? 1 : 0);
-      cleanup(client);
+      t.teardown(() => cleanup(client));
+      client.track({ userId: 'u1', event: 'E', messageId: 'm1' });
+      const outcome =
+        beforeEnqueueOnError === 'send' ? 'sending the original event' : 'dropping the event';
+      t.true(
+        client.logger.error.calledOnceWithExactly(
+          `beforeEnqueue failed for track event m1, ${outcome}. ${thrown}`,
+        ),
+      );
     }
   }
 });
 
-test('logging: no log line carries the event payload, with or without a hook', async (t) => {
+test('logging: a hook throwing a value whose toString throws stays inside the SDK', async (t) => {
+  const toString = spy(() => {
+    throw new Error('cannot stringify');
+  });
+  const values = [
+    { toString },
+    new Proxy(
+      {},
+      {
+        get() {
+          throw new Error('get trap');
+        },
+      },
+    ),
+    Object.create(null),
+  ];
+  for (const thrown of values) {
+    for (const beforeEnqueueOnError of ['send', 'drop']) {
+      const { client, post } = createClient({
+        beforeEnqueueOnError,
+        beforeEnqueue: () => {
+          throw thrown;
+        },
+      });
+      t.teardown(() => cleanup(client));
+      const callback = spy();
+      t.notThrows(() => client.track({ userId: 'u1', event: 'Kept', messageId: 'm1' }, callback));
+      await client.flush();
+      await setTimeout(5);
+      const outcome =
+        beforeEnqueueOnError === 'send' ? 'sending the original event' : 'dropping the event';
+      t.true(
+        client.logger.error.calledOnceWithExactly(
+          `beforeEnqueue failed for track event m1, ${outcome}. object`,
+        ),
+      );
+      t.true(callback.calledOnce);
+      if (beforeEnqueueOnError === 'send') {
+        t.is(callback.firstCall.args[0], undefined);
+        t.is(sentBatches(post)[0][0].event, 'Kept');
+      } else {
+        t.deepEqual(callback.firstCall.args, []);
+        t.false(post.called);
+      }
+    }
+  }
+  t.is(toString.callCount, 2);
+});
+
+test('logging: SDK beforeEnqueue lines never carry the event payload', async (t) => {
   const big = 'a'.repeat(33 * 1024);
   const hooks = [
-    undefined,
     () => null,
     () => {
       throw new Error('boom');
@@ -1140,7 +1143,9 @@ test('logging: no log line carries the event payload, with or without a hook', a
       client.track({ userId: 'u1', event: 'E', properties: { email: SECRET, big } });
       client.identify({ userId: 'u1', traits: { email: SECRET } });
       await client.flush();
-      const leaks = loggedArgs(client).filter((arg) => arg?.includes(SECRET) || arg?.includes(big));
+      const leaks = loggedArgs(client)
+        .filter((arg) => arg?.includes('beforeEnqueue'))
+        .filter((arg) => arg.includes(SECRET) || arg.includes(big));
       t.deepEqual(leaks, [], `hook ${i}, ${beforeEnqueueOnError}`);
       cleanup(client);
     }

@@ -1,6 +1,6 @@
 /* eslint-disable unicorn/filename-case -- `__tests__` is the test directory */
 const { default: test } = require('ava');
-const { spy, stub, useFakeTimers } = require('sinon');
+const { spy, stub, useFakeTimers, match } = require('sinon');
 const { setImmediate: nextTurn } = require('node:timers/promises');
 const { inspect } = require('node:util');
 const Analytics = require('../src');
@@ -69,10 +69,15 @@ const clockFor = (t) => {
   return clock;
 };
 
-const assertSafeLogs = (t, client) => {
+const assertSafeSdkLogs = (t, client) => {
   for (const level of levels) {
     for (const call of client.logger[level].getCalls()) {
-      t.false(inspect(call.args).includes(MARKER), `${level}: no payload in any argument`);
+      // The appended thrown error belongs to user code and is intentionally unredacted.
+      const ownFailureLine = call.args[0]?.match(
+        /^beforeEnqueue failed for .*?, (sending the original event|dropping the event)\./,
+      );
+      const sdkArgs = ownFailureLine ? [ownFailureLine[0], ...call.args.slice(1)] : call.args;
+      t.false(inspect(sdkArgs).includes(MARKER), `${level}: no payload in SDK diagnostics`);
     }
   }
 };
@@ -93,7 +98,7 @@ const baselineFor = async (t, clock, calls) => {
   t.is(plain.requests.length, 1);
   t.is(plain.requests[0].method, 'post');
   t.is(plain.requests[0].url, 'http://localhost:4065/v1/batch');
-  assertSafeLogs(t, plain.client);
+  assertSafeSdkLogs(t, plain.client);
   return plain.requests[0];
 };
 
@@ -254,13 +259,6 @@ const cases = [
     level: 'error',
   },
   {
-    id: 'exception_text_not_logged',
-    hook: () => {
-      throw Object.assign(new TypeError(MARKER), { name: MARKER });
-    },
-    level: 'error',
-  },
-  {
     id: 'output_normalisation',
     hook: mutate((e) => {
       e.userId = 42;
@@ -347,7 +345,7 @@ for (const scenario of cases) {
           `beforeEnqueue changed the reserved field "${scenario.field}"; it was restored.`,
         ),
       );
-    assertSafeLogs(t, actual.client);
+    assertSafeSdkLogs(t, actual.client);
   });
 }
 
@@ -385,10 +383,12 @@ test('conformance: cyclic_input_hook_error (NODE-BE-46)', async (t) => {
   t.is(callerCycle.properties.self, callerCycle.properties);
   t.true(
     actual.client.logger.error.calledOnceWithExactly(
-      'beforeEnqueue failed for track event m1 (TypeError), dropping the event.',
+      match(
+        /^beforeEnqueue failed for track event m1, dropping the event\. TypeError: Converting circular structure to JSON/,
+      ),
     ),
   );
-  assertSafeLogs(t, actual.client);
+  assertSafeSdkLogs(t, actual.client);
 });
 
 for (const id of [
@@ -457,7 +457,7 @@ for (const id of [
       t.true(actual.client.logger.info.calledOnce);
     } else if (id !== 'once_across_retries') t.true(actual.client.logger.warn.calledOnce);
     t.false(actual.errorHandler.called);
-    assertSafeLogs(t, actual.client);
+    assertSafeSdkLogs(t, actual.client);
   });
 }
 
@@ -481,7 +481,7 @@ for (const option of ['beforeEnqueue', 'beforeEnqueueOnError']) {
 }
 
 for (const beforeEnqueue of [undefined, (event) => event]) {
-  test(`logging: delivery diagnostics never contain payload (${beforeEnqueue ? 'hook' : 'no hook'})`, async (t) => {
+  test(`logging: delivery diagnostics retain master text (${beforeEnqueue ? 'hook' : 'no hook'})`, async (t) => {
     const clock = clockFor(t);
     const fields = input();
     const baseline = await baselineFor(t, clock, [['track', fields]]);
@@ -503,7 +503,12 @@ for (const beforeEnqueue of [undefined, (event) => event]) {
     t.is(requests.length, 1);
     assertRequest(t, requests[0], baseline);
     t.true(actual.errorHandler.calledOnce);
-    assertSafeLogs(t, actual.client);
+    t.true(actual.client.logger.error.calledWithExactly(`Error: ${MARKER}`));
+    t.true(
+      actual.client.logger.error.calledWithExactly(
+        `Response error status: 400\nResponse error code: ${MARKER}`,
+      ),
+    );
 
     const events = {};
     actual.client.pQueue = {
@@ -522,6 +527,15 @@ for (const beforeEnqueue of [undefined, (event) => event]) {
     events.failed(job, new TypeError(MARKER));
     events.completed(job, MARKER);
     actual.client._deserializeJobData({ data: { version: 3, eventData: MARKER } });
-    assertSafeLogs(t, actual.client);
+    t.true(
+      actual.client.logger.error.calledWithExactly(`job : node-fixed-job TypeError: ${MARKER}`),
+    );
+    t.true(actual.client.logger.debug.calledWithExactly(`job : node-fixed-job ${MARKER}`));
+    t.true(
+      actual.client.logger.error.calledWith(
+        'Cannot parse the job data.',
+        match.instanceOf(SyntaxError),
+      ),
+    );
   });
 }

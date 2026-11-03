@@ -142,45 +142,6 @@ function safeRetryConfig(config = {}) {
   return safe;
 }
 
-// Built-in error classes a hook error is labelled by. `err.name` is writable and can carry the
-// event, so the label comes from the nearest built-in prototype instead.
-const ERROR_TYPES = [
-  assert.AssertionError,
-  EvalError,
-  RangeError,
-  ReferenceError,
-  SyntaxError,
-  TypeError,
-  URIError,
-  Error,
-];
-
-/**
- * A fixed label for a thrown value that cannot carry the event: the nearest built-in error
- * class, otherwise its `typeof`. Never throws, even for a Proxy whose traps throw.
- *
- * @param {*} err
- * @api private
- */
-const errorLabel = (err) => {
-  try {
-    const seen = new Set();
-    for (let proto = Object.getPrototypeOf(err); proto; proto = Object.getPrototypeOf(proto)) {
-      if (seen.has(proto) || seen.size >= 100) {
-        break;
-      }
-      seen.add(proto);
-      const type = ERROR_TYPES.find((ErrorType) => ErrorType.prototype === proto);
-      if (type) {
-        return type.name;
-      }
-    }
-  } catch {
-    // A throwing Proxy trap, or null/undefined: fall through to typeof
-  }
-  return typeof err;
-};
-
 const SIZE_ERROR = 'Your message must be < 32kb.';
 const SIZE_WARNING = `${SIZE_ERROR} This is currently surfaced as a warning. Please update your code`;
 
@@ -311,7 +272,7 @@ class Analytics {
       );
       // <= v2.x jobs are not supported
     } catch (error) {
-      this.logger.error(`Cannot parse the job data (${errorLabel(error)}).`);
+      this.logger.error('Cannot parse the job data.', error);
     }
     return undefined;
   }
@@ -330,15 +291,16 @@ class Analytics {
     this.pQueue.on('failed', (job, error) => {
       const jobData = this._deserializeJobData(job);
       if (jobData) {
-        this.logger.error(`job : ${jobData.description} failed (${errorLabel(error)}).`);
+        this.logger.error(`job : ${jobData.description} ${error}`);
       }
     });
 
     // tapping on queue events
-    this.pQueue.on('completed', (job) => {
+    this.pQueue.on('completed', (job, result) => {
       const jobData = this._deserializeJobData(job);
       if (jobData) {
-        this.logger.debug(`job : ${jobData.description} completed`);
+        result = result || 'completed';
+        this.logger.debug(`job : ${jobData.description} ${result}`);
       }
     });
 
@@ -427,10 +389,7 @@ class Analytics {
                     .add(self._getDataForPersistenceQueue(jobData), { lifo: true })
                     // eslint-disable-next-line no-unused-vars
                     .then((pushedJob) => {
-                      done(
-                        null,
-                        `job : ${description} failed for attempt ${attempts} (${errorLabel(err)})`,
-                      );
+                      done(null, `job : ${description} failed for attempt ${attempts} ${err}`);
                     })
                     .catch((error) => {
                       self.logger.error(`failed to requeue job ${description}`);
@@ -853,13 +812,18 @@ class Analytics {
     try {
       event = this._runBeforeEnqueue(type, message);
     } catch (err) {
-      // Only a fixed label: the error's message, stack or name can quote the event
-      const failed = `beforeEnqueue failed for ${type} event ${safeMessageId} (${errorLabel(err)})`;
+      let errorText;
+      try {
+        errorText = `${err}`;
+      } catch {
+        errorText = typeof err;
+      }
+      const failed = `beforeEnqueue failed for ${type} event ${safeMessageId}`;
       if (this.beforeEnqueueOnError === 'drop') {
-        this.logger.error(`${failed}, dropping the event.`);
+        this.logger.error(`${failed}, dropping the event. ${errorText}`);
         return null;
       }
-      this.logger.error(`${failed}, sending the original event.`);
+      this.logger.error(`${failed}, sending the original event. ${errorText}`);
       // The usual oversize handling, which _validate() leaves to this point when a hook is set
       if (Buffer.byteLength(JSON.stringify(message), 'utf8') >= looselyValidate.MAX_SIZE) {
         this.logger.info(SIZE_WARNING);
@@ -1031,7 +995,7 @@ class Analytics {
     try {
       await this.flush();
     } catch (err) {
-      this.logger.debug(`flush from timer failed (${errorLabel(err)}).`);
+      this.logger.debug(`flush from timer failed: ${err}`);
     }
   }
 
@@ -1145,7 +1109,7 @@ class Analytics {
           break;
         }
         // Already reported to the batch's callbacks and logged; send the rest.
-        this.logger.debug(`batch failed, flushing the rest (${errorLabel(err)}).`);
+        this.logger.debug(`batch failed, flushing the rest: ${err}`);
         continue;
       }
       if (sent === BATCH_NOT_SENT) {
@@ -1257,7 +1221,7 @@ class Analytics {
             // Clean up callbacks if push to queue failed
             this.pCallbacksMap.delete(jobId);
             this.logger.error(
-              `failed to push to redis queue, in-memory queue size: ${this.queue.length} (${errorLabel(error)})`,
+              `failed to push to redis queue, in-memory queue size: ${this.queue.length}: ${error}`,
             );
             // The items are back in the queue for the retry above; report the error
             // instead of rejecting, so flush() stops here rather than retrying at once.
@@ -1277,7 +1241,7 @@ class Analytics {
         })
         .catch((err) => {
           redactCredentials(err);
-          this.logger.error(`Request failed (${errorLabel(err)}).`);
+          this.logger.error(`Error: ${err.response ? err.response.statusText : err.code}`);
           const isDuringTestExecution =
             err &&
             err.response &&
@@ -1312,10 +1276,10 @@ class Analytics {
   _isErrorRetryable(error) {
     if (error.response) {
       this.logger.error(
-        `Response error status: ${Number.isInteger(error.response.status) ? error.response.status : 'unknown'}\nResponse error type: ${errorLabel(error)}`,
+        `Response error status: ${error.response.status}\nResponse error code: ${error.code}`,
       );
     } else {
-      this.logger.error(`Response error type: ${errorLabel(error)}`);
+      this.logger.error(`Response error code: ${error.code}`);
     }
 
     // Retry Network Errors.

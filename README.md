@@ -104,7 +104,7 @@ const client = new Analytics(WRITE_KEY, {
 
 If the hook throws, returns anything other than an event or `null` (including `undefined`), changes the event `type`, or returns an event that fails the call's validation (for example, no `userId` or `anonymousId`) or is 32KB or larger, the SDK logs an error and sends the original event, or drops it with `beforeEnqueueOnError: 'drop'`. Changes to `messageId`, `context.library` and `channel` are reverted with a warning. The hook never runs again for retries or persistent-queue replays. A non-function `beforeEnqueue` or a `beforeEnqueueOnError` other than `'send'` or `'drop'` throws when the client is created. `null` or `undefined` disables the hook and selects the default `'send'` policy.
 
-The copy isolates plain event data. Functions, `Error` and `WeakMap` values inside an event are shared with the original. The SDK never logs event contents; when the hook throws, only the built-in error class (such as `TypeError`) or the thrown value's type is logged.
+The copy isolates plain event data. Functions, `Error` and `WeakMap` values inside an event are shared with the original. The SDK's own beforeEnqueue diagnostics omit event contents. Hook errors are logged as thrown, including their messages; if converting a thrown value to a string fails, the SDK logs its `typeof` instead.
 
 Retry hooks in `axiosRetryConfig` receive credential-redacted error and request snapshots.
 The snapshots omit authentication, raw requests, agents, functions, and other live transport objects.
