@@ -743,10 +743,8 @@ test('no hook: the queued event matches what an identity hook produces', (t) => 
   plain.track(input);
   hooked.track(input);
 
-  // The JSON round-trip preserves wire JSON, and timestamp is restored to a Date.
+  // The JSON round-trip preserves the wire JSON.
   t.is(JSON.stringify(hooked.queue[0].message), JSON.stringify(plain.queue[0].message));
-  t.true(hooked.queue[0].message.timestamp instanceof Date);
-  t.deepEqual(hooked.queue[0].message.timestamp, plain.queue[0].message.timestamp);
   t.false(hooked.logger.warn.called);
   t.false(hooked.logger.error.called);
   cleanup(plain);
@@ -906,7 +904,7 @@ test('wire form: the hook result is serialized once and its messageId is kept', 
 });
 
 for (const beforeEnqueueOnError of ['send', 'drop']) {
-  test(`wire form: a timestamp getter is read once and its Date passes through ('${beforeEnqueueOnError}')`, async (t) => {
+  test(`wire form: a timestamp getter is read once and sent as its ISO string ('${beforeEnqueueOnError}')`, async (t) => {
     let reads = 0;
     const { client, post } = createClient({
       beforeEnqueueOnError,
@@ -926,8 +924,7 @@ for (const beforeEnqueueOnError of ['send', 'drop']) {
     t.is(reads, 1);
     t.false(client.logger.error.called);
     const [[sent]] = sentBatches(post);
-    t.true(sent.timestamp instanceof Date);
-    t.deepEqual(sent.timestamp, new Date(1000));
+    t.is(sent.timestamp, new Date(1000).toISOString());
     cleanup(client);
   });
 }

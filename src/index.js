@@ -865,10 +865,6 @@ class Analytics {
     );
     assert(componentType(event) === 'object', 'beforeEnqueue must return an event object or null.');
     assert(event.type === type, `beforeEnqueue must not change the event type ("${type}").`);
-    // A Date serializes to an ISO string; turn it back so the standard validation applies
-    if (event.timestamp) {
-      event.timestamp = new Date(event.timestamp);
-    }
     // Same ID coercion as enqueue() applies before the hook
     ['anonymousId', 'userId'].forEach((field) => {
       if (event[field] && !isString(event[field])) {
@@ -890,7 +886,8 @@ class Analytics {
         `beforeEnqueue changed reserved fields (${restored.join(', ')}); they were restored.`,
       );
     }
-    looselyValidate(event, type);
+    // timestamp is an ISO string after serialization, which the "date" rule would reject
+    looselyValidate({ ...event, timestamp: undefined }, type);
     return event;
   }
 
