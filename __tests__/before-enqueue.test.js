@@ -105,6 +105,14 @@ test('validation failure follows send and drop policies', async (t) => {
   }
 });
 
+test('a changed type is validated by its own rules', async (t) => {
+  const { client, post } = createClient(t, { beforeEnqueue: (e) => ({ ...e, type: 'track' }) });
+  client.page({ userId: 'u1', name: 'Home' });
+  await client.flush();
+  t.is(sent(post).type, 'page');
+  t.true(client.logger.error.calledOnce);
+});
+
 test('hook can fix an invalid call', async (t) => {
   const { client, post } = createClient(t, { beforeEnqueue: (e) => ({ ...e, event: 'Fixed' }) });
   t.notThrows(() => client.track({ userId: 'u1' }));

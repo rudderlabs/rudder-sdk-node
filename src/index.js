@@ -818,7 +818,7 @@ class Analytics {
         'beforeEnqueue must return an event object or null.',
       );
       // Same validation as the call itself; computing the size also rejects cycles
-      this._validate(event, type, true);
+      this._validate(event, event.type, true); // The hook may change the type
       const { channel } = message;
       const { library } = message.context;
       if (
