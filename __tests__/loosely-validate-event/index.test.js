@@ -428,3 +428,19 @@ test('requires events to be < 32kb', (t) => {
     });
   });
 });
+
+test('skips the size check with checkSize: false, but still validates the event', (t) => {
+  const event = {
+    type: 'track',
+    userId: 'banana',
+    properties: { blob: 'a'.repeat(33 * 1024) },
+  };
+
+  const error = t.throws(() => validate(event, 'track', { checkSize: false }), {
+    instanceOf: AssertionError,
+  });
+  t.is(error.message, 'You must pass an "event".');
+
+  t.notThrows(() => validate({ ...event, event: 'Did Something' }, 'track', { checkSize: false }));
+  t.is(validate.MAX_SIZE, 32 * 1024);
+});

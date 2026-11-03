@@ -8,6 +8,8 @@ const md5 = require('md5');
 const isString = require('lodash.isstring');
 const cloneDeep = require('lodash.clonedeep');
 const zlib = require('zlib');
+const { isDeepStrictEqual } = require('util');
+const componentType = require('component-type');
 const looselyValidate = require('./loosely-validate-event');
 const Logger = require('./Logger').Logger;
 const LOG_LEVEL_MAP = require('./Logger').LOG_LEVEL_MAP;
@@ -140,6 +142,43 @@ function safeRetryConfig(config = {}) {
   return safe;
 }
 
+// Built-in error classes a hook error is labelled by. `err.name` is writable and can carry the
+// event, so the label comes from the nearest built-in prototype instead.
+const ERROR_TYPES = [
+  assert.AssertionError,
+  EvalError,
+  RangeError,
+  ReferenceError,
+  SyntaxError,
+  TypeError,
+  URIError,
+  Error,
+];
+
+/**
+ * A fixed label for a thrown value that cannot carry the event: the nearest built-in error
+ * class, otherwise its `typeof`. Never throws, even for a Proxy whose traps throw.
+ *
+ * @param {*} err
+ * @api private
+ */
+const errorLabel = (err) => {
+  try {
+    for (let proto = Object.getPrototypeOf(err); proto; proto = Object.getPrototypeOf(proto)) {
+      const type = ERROR_TYPES.find((ErrorType) => ErrorType.prototype === proto);
+      if (type) {
+        return type.name;
+      }
+    }
+  } catch {
+    // A throwing Proxy trap, or null/undefined: fall through to typeof
+  }
+  return typeof err;
+};
+
+const SIZE_ERROR = 'Your message must be < 32kb.';
+const SIZE_WARNING = `${SIZE_ERROR} This is currently surfaced as a warning. Please update your code`;
+
 class Analytics {
   /**
    * Initialize a new `Analytics` with your RudderStack source's `writeKey` and an
@@ -162,6 +201,8 @@ class Analytics {
    *   @property {Number} [retryCount] (default: 3)
    *   @property {Function} [errorHandler] (optional)
    *   @property {Boolean} [gzip] (default: true)
+   *   @property {Function} [beforeEnqueue] (optional) returns the event to send, or null to drop it
+   *   @property {String} [beforeEnqueueOnError] (default: 'send') 'send' or 'drop' the event when beforeEnqueue fails
    */
 
   constructor(writeKey, options) {
@@ -181,10 +222,20 @@ class Analytics {
       logLevel,
       enable,
       retryCount,
+      beforeEnqueue,
+      beforeEnqueueOnError,
     } = loadOptions;
     let { axiosInstance } = loadOptions;
 
     assert(writeKey, "You must pass your RudderStack project's write key.");
+    assert(
+      beforeEnqueue == null || typeof beforeEnqueue === 'function',
+      'beforeEnqueue must be a function.',
+    );
+    assert(
+      beforeEnqueueOnError == null || ['send', 'drop'].includes(beforeEnqueueOnError),
+      "beforeEnqueueOnError must be 'send' or 'drop'.",
+    );
 
     this.queue = [];
     // Running byte size of the queue, so enqueue() doesn't re-serialize every
@@ -230,6 +281,9 @@ class Analytics {
 
     this.logger = new Logger(LOG_LEVEL_MAP[this.logLevel]);
 
+    this.beforeEnqueue = beforeEnqueue || undefined;
+    this.beforeEnqueueOnError = beforeEnqueueOnError || 'send';
+
     if (retryCount !== 0) {
       axiosRetry(this.axiosInstance, {
         retries: retryCount || 3,
@@ -252,7 +306,7 @@ class Analytics {
       );
       // <= v2.x jobs are not supported
     } catch (error) {
-      this.logger.error('Cannot parse the job data.', error);
+      this.logger.error(`Cannot parse the job data (${errorLabel(error)}).`);
     }
     return undefined;
   }
@@ -271,16 +325,15 @@ class Analytics {
     this.pQueue.on('failed', (job, error) => {
       const jobData = this._deserializeJobData(job);
       if (jobData) {
-        this.logger.error(`job : ${jobData.description} ${error}`);
+        this.logger.error(`job : ${jobData.description} failed (${errorLabel(error)}).`);
       }
     });
 
     // tapping on queue events
-    this.pQueue.on('completed', (job, result) => {
+    this.pQueue.on('completed', (job) => {
       const jobData = this._deserializeJobData(job);
       if (jobData) {
-        result = result || 'completed';
-        this.logger.debug(`job : ${jobData.description} ${result}`);
+        this.logger.debug(`job : ${jobData.description} completed`);
       }
     });
 
@@ -369,7 +422,10 @@ class Analytics {
                     .add(self._getDataForPersistenceQueue(jobData), { lifo: true })
                     // eslint-disable-next-line no-unused-vars
                     .then((pushedJob) => {
-                      done(null, `job : ${description} failed for attempt ${attempts} ${err}`);
+                      done(
+                        null,
+                        `job : ${description} failed for attempt ${attempts} (${errorLabel(err)})`,
+                      );
                     })
                     .catch((error) => {
                       self.logger.error(`failed to requeue job ${description}`);
@@ -541,11 +597,11 @@ class Analytics {
     try {
       looselyValidate(message, type);
     } catch (e) {
-      if (e.message === 'Your message must be < 32kb.') {
-        this.logger.info(
-          'Your message must be < 32kb. This is currently surfaced as a warning. Please update your code',
-          message,
-        );
+      if (e.message === SIZE_ERROR) {
+        // With a hook, the size is checked after it runs (see _beforeEnqueue())
+        if (!this.beforeEnqueue) {
+          this.logger.info(SIZE_WARNING);
+        }
         return;
       }
       throw e;
@@ -741,6 +797,14 @@ class Analytics {
       lMessage.userId = JSON.stringify(lMessage.userId);
     }
 
+    if (this.beforeEnqueue) {
+      lMessage = this._beforeEnqueue(type, lMessage);
+      if (lMessage === null) {
+        setImmediate(callback);
+        return;
+      }
+    }
+
     const item = { message: lMessage, callback };
     const itemBytes = this._measureItemBytes(item);
     this.queue.push(item);
@@ -763,6 +827,95 @@ class Analytics {
     }
 
     this.setupFlushTimer();
+  }
+
+  /**
+   * Run `beforeEnqueue` on a copy of the enriched `message`, so a failing hook leaves the
+   * original intact. Returns the event to queue, or null to drop it. Hook errors stay inside
+   * the SDK; an invalid original selected by send retains its downstream encoding errors.
+   *
+   * @param {String} type
+   * @param {Object} message
+   * @api private
+   */
+  _beforeEnqueue(type, message) {
+    const { messageId } = message;
+    let event;
+    try {
+      event = this._runBeforeEnqueue(type, message);
+    } catch (err) {
+      // Only a fixed label: the error's message, stack or name can quote the event
+      const failed = `beforeEnqueue failed for ${type} event ${messageId} (${errorLabel(err)})`;
+      if (this.beforeEnqueueOnError === 'drop') {
+        this.logger.error(`${failed}, dropping the event.`);
+        return null;
+      }
+      this.logger.error(`${failed}, sending the original event.`);
+      // The usual oversize handling, which _validate() leaves to this point when a hook is set
+      if (Buffer.byteLength(JSON.stringify(message), 'utf8') >= looselyValidate.MAX_SIZE) {
+        this.logger.info(SIZE_WARNING);
+      }
+      return message;
+    }
+    if (event === null) {
+      this.logger.debug(`beforeEnqueue dropped ${type} event ${messageId}`);
+    }
+    return event;
+  }
+
+  /**
+   * Call the hook and check what it returned, restoring reserved fields. Throws on anything
+   * but null or a valid event of the same type.
+   *
+   * @api private
+   */
+  _runBeforeEnqueue(type, message) {
+    const result = this.beforeEnqueue(cloneDeep(message));
+    if (result === null) {
+      return null;
+    }
+    assert(
+      componentType(result) === 'object',
+      'beforeEnqueue must return an event object or null.',
+    );
+    // Check and queue the wire form: toJSON and getters run once, here, and the SDK never
+    // writes into a retained or frozen result. BigInt and cycles throw, as hook errors.
+    const event = JSON.parse(JSON.stringify(result));
+    assert(componentType(event) === 'object', 'beforeEnqueue must return an event object or null.');
+    assert(event.type === type, `beforeEnqueue must not change the event type ("${type}").`);
+    // A Date serializes to an ISO string, so the wire timestamp must be one that parses
+    const { timestamp } = event;
+    assert(
+      !timestamp || (typeof timestamp === 'string' && !Number.isNaN(Date.parse(timestamp))),
+      '"timestamp" must be a date.',
+    );
+    looselyValidate({ ...event, timestamp: undefined }, type, { checkSize: false });
+    // Same ID coercion as enqueue() applies before the hook
+    ['anonymousId', 'userId'].forEach((field) => {
+      if (event[field] && !isString(event[field])) {
+        event[field] = JSON.stringify(event[field]);
+      }
+    });
+    event.context = event.context || {};
+
+    ['messageId', 'channel'].forEach((field) => {
+      if (event[field] !== message[field]) {
+        this.logger.warn(`beforeEnqueue changed the reserved field "${field}"; it was restored.`);
+        event[field] = message[field];
+      }
+    });
+    if (!isDeepStrictEqual(event.context.library, message.context.library)) {
+      this.logger.warn(
+        'beforeEnqueue changed the reserved field "context.library"; it was restored.',
+      );
+      event.context.library = message.context.library;
+    }
+    const bytes = Buffer.byteLength(JSON.stringify(event), 'utf8');
+    assert(
+      bytes < looselyValidate.MAX_SIZE,
+      `beforeEnqueue returned ${bytes} bytes; events must be < 32kb.`,
+    );
+    return event;
   }
 
   /**
@@ -842,7 +995,7 @@ class Analytics {
     try {
       await this.flush();
     } catch (err) {
-      this.logger.debug(`flush from timer failed: ${err}`);
+      this.logger.debug(`flush from timer failed (${errorLabel(err)}).`);
     }
   }
 
@@ -956,7 +1109,7 @@ class Analytics {
           break;
         }
         // Already reported to the batch's callbacks and logged; send the rest.
-        this.logger.debug(`batch failed, flushing the rest: ${err}`);
+        this.logger.debug(`batch failed, flushing the rest (${errorLabel(err)}).`);
         continue;
       }
       if (sent === BATCH_NOT_SENT) {
@@ -1068,7 +1221,7 @@ class Analytics {
             // Clean up callbacks if push to queue failed
             this.pCallbacksMap.delete(jobId);
             this.logger.error(
-              `failed to push to redis queue, in-memory queue size: ${this.queue.length}: ${error}`,
+              `failed to push to redis queue, in-memory queue size: ${this.queue.length} (${errorLabel(error)})`,
             );
             // The items are back in the queue for the retry above; report the error
             // instead of rejecting, so flush() stops here rather than retrying at once.
@@ -1088,7 +1241,7 @@ class Analytics {
         })
         .catch((err) => {
           redactCredentials(err);
-          this.logger.error(`Error: ${err.response ? err.response.statusText : err.code}`);
+          this.logger.error(`Request failed (${errorLabel(err)}).`);
           const isDuringTestExecution =
             err &&
             err.response &&
@@ -1123,10 +1276,10 @@ class Analytics {
   _isErrorRetryable(error) {
     if (error.response) {
       this.logger.error(
-        `Response error status: ${error.response.status}\nResponse error code: ${error.code}`,
+        `Response error status: ${Number.isInteger(error.response.status) ? error.response.status : 'unknown'}\nResponse error type: ${errorLabel(error)}`,
       );
     } else {
-      this.logger.error(`Response error code: ${error.code}`);
+      this.logger.error(`Response error type: ${errorLabel(error)}`);
     }
 
     // Retry Network Errors.

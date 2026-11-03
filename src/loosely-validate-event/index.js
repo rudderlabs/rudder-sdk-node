@@ -78,11 +78,13 @@ const genericValidationRules = {
  * Validate an event object.
  */
 
-function validateGenericEvent(event) {
+function validateGenericEvent(event, checkSize) {
   assert(type(event) === 'object', 'You must pass a message object.');
-  const json = JSON.stringify(event);
-  // Strings are variable byte encoded, so json.length is not sufficient.
-  assert(Buffer.byteLength(json, 'utf8') < MAX_SIZE, 'Your message must be < 32kb.');
+  if (checkSize) {
+    const json = JSON.stringify(event);
+    // Strings are variable byte encoded, so json.length is not sufficient.
+    assert(Buffer.byteLength(json, 'utf8') < MAX_SIZE, 'Your message must be < 32kb.');
+  }
 
   Object.keys(genericValidationRules).forEach((key) => {
     const val = event[key];
@@ -98,10 +100,10 @@ function validateGenericEvent(event) {
 }
 
 /**
- * Validate an event.
+ * Validate an event. `checkSize: false` skips the 32kb check, for callers that size the event themselves.
  */
-function looselyValidateEvent(event, evType) {
-  validateGenericEvent(event);
+function looselyValidateEvent(event, evType, { checkSize = true } = {}) {
+  validateGenericEvent(event, checkSize);
   const eventType = evType || event.type;
   assert(eventType, 'You must pass an event type.');
 
@@ -124,3 +126,4 @@ function looselyValidateEvent(event, evType) {
 }
 
 module.exports = looselyValidateEvent;
+module.exports.MAX_SIZE = MAX_SIZE;
