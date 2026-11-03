@@ -39,7 +39,7 @@
     "format": "prettier --write .",
     "lint:fix": "eslint . --fix",
     "prepare": "husky",
-    "pre-commit": "npm run test && npx lint-staged",
+    "pre-commit": "npm run test && npx lint-staged --no-stash",
     "commit-msg": "commitlint --edit",
     "commit": "git-cz",
     "package": "npm run build:cjs && npm run build:esm && npm run copy:assets && npm run check:package",
