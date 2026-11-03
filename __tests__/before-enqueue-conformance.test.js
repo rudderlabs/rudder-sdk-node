@@ -165,13 +165,6 @@ const cases = [
     level: 'error',
   },
   { id: 'wrong_shape_hook_error', hook: () => 42, level: 'error' },
-  {
-    id: 'type_change_hook_error',
-    hook: mutate((e) => {
-      e.type = MARKER;
-    }),
-    level: 'error',
-  },
   ...['messageId', 'channel', 'context.library'].flatMap((field) =>
     ['change', 'remove'].map((operation) => ({
       id: `${field === 'messageId' ? 'keep' : 'restore'}_${operation === 'remove' ? 'removed_' : ''}${field === 'messageId' ? 'messageid' : field.replace('.', '_')}`,

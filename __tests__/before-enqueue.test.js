@@ -467,19 +467,6 @@ test('post-hook validation: with drop, an invalid event is dropped', async (t) =
   cleanup(client);
 });
 
-test('type change: returning another type is a hook error and the original goes out as track', async (t) => {
-  const { client, post } = createClient({
-    beforeEnqueue: (event) => ({ ...event, type: 'identify' }),
-  });
-
-  client.track({ userId: 'u1', event: 'Kept' });
-  await client.flush();
-
-  t.is(sentBatches(post)[0][0].type, 'track');
-  t.true(client.logger.error.calledOnce);
-  cleanup(client);
-});
-
 test("size: a hook that grows the event past 32KB is a hook error; 'send' sends the original", async (t) => {
   const { client, post } = createClient({
     beforeEnqueue: (event) => {

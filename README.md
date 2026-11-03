@@ -102,7 +102,7 @@ const client = new Analytics(WRITE_KEY, {
 });
 ```
 
-If the hook throws, returns anything other than an event or `null`, changes the event `type`, or returns an event that fails the call's validation (for example, no `userId` or `anonymousId`, or 32KB or larger), the SDK logs the error and sends the original event, or drops it with `beforeEnqueueOnError: 'drop'`.
+If the hook throws, returns anything other than an event or `null`, or returns an event that fails the call's validation (for example, no `userId` or `anonymousId`, or 32KB or larger), the SDK logs the error and sends the original event, or drops it with `beforeEnqueueOnError: 'drop'`.
 
 The hook may change `messageId`. Changes to `channel` and `context.library` are reverted with a warning. A non-function `beforeEnqueue` or a `beforeEnqueueOnError` other than `'send'` or `'drop'` throws when the client is created.
 

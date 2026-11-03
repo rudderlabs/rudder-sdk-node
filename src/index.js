@@ -814,7 +814,6 @@ class Analytics {
         componentType(event) === 'object',
         'beforeEnqueue must return an event object or null.',
       );
-      assert(event.type === type, `beforeEnqueue must not change the event type ("${type}").`);
       // Per-type rules and size; computing the size also rejects cycles
       looselyValidate(event, type);
       const { channel } = message;
