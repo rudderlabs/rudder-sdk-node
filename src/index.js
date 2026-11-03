@@ -557,15 +557,13 @@ class Analytics {
     };
   }
 
-  _validate(message, type) {
+  // With a hook, the size is checked after it runs (see _beforeEnqueue())
+  _validate(message, type, checkSize = !this.beforeEnqueue) {
     try {
-      looselyValidate(message, type);
+      looselyValidate(message, type, { checkSize });
     } catch (e) {
       if (e.message === SIZE_ERROR) {
-        // With a hook, the size is checked after it runs (see _beforeEnqueue())
-        if (!this.beforeEnqueue) {
-          this.logger.info(SIZE_WARNING);
-        }
+        this.logger.info(SIZE_WARNING);
         return;
       }
       throw e;
@@ -822,10 +820,7 @@ class Analytics {
         return null;
       }
       this.logger.error(`${failed}, sending the original event. ${errorText}`);
-      // The usual oversize handling, which _validate() leaves to this point when a hook is set
-      if (Buffer.byteLength(JSON.stringify(message), 'utf8') >= looselyValidate.MAX_SIZE) {
-        this.logger.info(SIZE_WARNING);
-      }
+      this._validate(message, type, true);
       return message;
     }
     if (event === null) {
