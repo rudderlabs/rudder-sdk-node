@@ -39,7 +39,7 @@
     "format": "prettier --write .",
     "lint:fix": "eslint . --fix",
     "prepare": "husky",
-    "pre-commit": "npm run test && npx lint-staged --no-stash",
+    "pre-commit": "npm run test && npx lint-staged",
     "commit-msg": "commitlint --edit",
     "commit": "git-cz",
     "package": "npm run build:cjs && npm run build:esm && npm run copy:assets && npm run check:package",
@@ -55,7 +55,7 @@
     "analytics"
   ],
   "dependencies": {
-    "axios": "1.20.0",
+    "axios": "^1.20.0",
     "axios-retry": "4.5.0",
     "component-type": "2.0.0",
     "join-component": "1.1.0",
