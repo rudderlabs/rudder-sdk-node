@@ -467,6 +467,19 @@ test('post-hook validation: with drop, an invalid event is dropped', async (t) =
   cleanup(client);
 });
 
+test('validation: the hook can fix an invalid call before it is validated', async (t) => {
+  const { client, post } = createClient({
+    beforeEnqueue: (event) => ({ ...event, event: 'Fixed' }),
+  });
+
+  client.track({ userId: 'u1' });
+  await client.flush();
+
+  t.is(sentBatches(post)[0][0].event, 'Fixed');
+  t.false(client.logger.error.called);
+  cleanup(client);
+});
+
 test('size: an event the hook grows past 32KB is sent with the usual warning', async (t) => {
   const { client, post } = createClient({
     beforeEnqueue: (event) => {

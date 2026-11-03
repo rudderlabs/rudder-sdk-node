@@ -557,10 +557,13 @@ class Analytics {
     };
   }
 
-  // With a hook, the size is checked after it runs (see _beforeEnqueue())
-  _validate(message, type, checkSize = !this.beforeEnqueue) {
+  _validate(message, type, afterHook = false) {
+    // With a hook, its result is validated instead (see _beforeEnqueue())
+    if (this.beforeEnqueue && !afterHook) {
+      return;
+    }
     try {
-      looselyValidate(message, type, { checkSize });
+      looselyValidate(message, type);
     } catch (e) {
       if (e.message === SIZE_ERROR) {
         this.logger.info(SIZE_WARNING);
