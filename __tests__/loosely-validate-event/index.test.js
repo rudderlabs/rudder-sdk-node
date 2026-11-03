@@ -442,5 +442,4 @@ test('skips the size check with checkSize: false, but still validates the event'
   t.is(error.message, 'You must pass an "event".');
 
   t.notThrows(() => validate({ ...event, event: 'Did Something' }, 'track', { checkSize: false }));
-  t.is(validate.MAX_SIZE, 32 * 1024);
 });

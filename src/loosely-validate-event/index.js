@@ -126,4 +126,3 @@ function looselyValidateEvent(event, evType, { checkSize = true } = {}) {
 }
 
 module.exports = looselyValidateEvent;
-module.exports.MAX_SIZE = MAX_SIZE;
