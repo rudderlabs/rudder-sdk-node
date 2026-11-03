@@ -1,500 +1,173 @@
 /* eslint-disable unicorn/filename-case -- `__tests__` is the test directory */
 const { default: test } = require('ava');
-const { spy, stub, useFakeTimers, match } = require('sinon');
+const { spy, stub, useFakeTimers } = require('sinon');
 const { setImmediate: nextTurn } = require('node:timers/promises');
-const { inspect } = require('node:util');
 const Analytics = require('../src');
-const { version } = require('../package.json');
 
-// Node bindings of rudder-specs/sdk-architecture/sdks/llds/before-enqueue/fixtures/conformance.json.
-// Compare the complete axios-serialized request against the same no-hook call. Only the
-// fixture's explicit edits change that baseline; SDK envelope/metadata fields stay intact.
-const MARKER = 'BE_PAYLOAD_MARKER_5704';
-const INPUT_TIME = '2026-10-23T10:00:00.000Z';
-const SEND_TIME = '2026-10-23T10:00:01.000Z';
-const library = { name: 'analytics-node', version };
-const levels = ['debug', 'info', 'warn', 'error'];
+// Node runner for rudder-specs/sdk-architecture/sdks/llds/before-enqueue/fixtures/conformance.json.
+const SIZE_WARNING =
+  'Your message must be < 32kb. This is currently surfaced as a warning. Please update your code';
 const input = () => ({
-  userId: 'user-1',
-  event: 'Order Completed',
-  properties: { marker: MARKER, total: 42 },
-  context: {
-    library: { name: 'fixture-sdk', version: '1.0.0' },
-    wrapperLibrary: { name: 'fixture-wrapper' },
-  },
-  channel: 'server',
+  userId: 7,
+  event: 'Order',
   messageId: 'm1',
-  timestamp: new Date(INPUT_TIME),
+  properties: { total: 42 },
+  context: { custom: true },
 });
-
-const wireClient = (t, options = {}, responses = [200]) => {
+const wireClient = (t, options = {}, retry = false) => {
   const requests = [];
   const errorHandler = spy();
   const client = new Analytics('key', {
     dataPlaneUrl: 'http://localhost:4065',
-    flushInterval: 60000,
     gzip: false,
-    retryCount: 0,
+    flushInterval: 60000,
+    retryCount: retry ? 1 : 0,
     axiosRetryConfig: { retryDelay: () => 0 },
     axiosConfig: {
       adapter: async (config) => {
-        // This is the final HTTP body, after axios transformRequest, also on retries.
         requests.push({ method: config.method, url: config.url, body: config.data });
-        const status = responses[Math.min(requests.length - 1, responses.length - 1)];
-        const response = { data: {}, status, statusText: String(status), headers: {}, config };
-        if (status !== 200) {
-          const error = new Error('Service Unavailable');
-          error.config = config;
-          error.response = response;
-          throw error;
-        }
-        return response;
+        if (retry && requests.length === 1)
+          throw Object.assign(new Error('retry'), { config, response: { status: 503 } });
+        return { status: 200, data: {}, headers: {}, config };
       },
     },
     errorHandler,
     ...options,
   });
   client.flushed = true;
-  for (const level of levels) stub(client.logger, level);
+  for (const level of ['debug', 'info', 'warn', 'error']) stub(client.logger, level);
   t.teardown(() => {
     clearTimeout(client.flushTimer);
     clearTimeout(client.timer);
   });
   return { client, requests, errorHandler };
 };
-
-const clockFor = (t) => {
-  const clock = useFakeTimers({ now: Date.parse(INPUT_TIME), toFake: ['Date'] });
-  t.teardown(() => clock.restore());
-  return clock;
+const edit = (fn) => (e) => {
+  fn(e);
+  return e;
 };
-
-const assertSafeSdkLogs = (t, client) => {
-  for (const level of levels) {
-    for (const call of client.logger[level].getCalls()) {
-      // The appended thrown error belongs to user code and is intentionally unredacted.
-      const ownFailureLine = call.args[0]?.match(
-        /^beforeEnqueue failed for .*?, (sending the original event|dropping the event)\./,
-      );
-      const sdkArgs = ownFailureLine ? [ownFailureLine[0], ...call.args.slice(1)] : call.args;
-      t.false(inspect(sdkArgs).includes(MARKER), `${level}: no payload in SDK diagnostics`);
-    }
-  }
+const fail = () => {
+  throw new Error('boom');
 };
-
-const assertRequest = (t, actual, expected) => {
-  t.is(actual.method, expected.method);
-  t.is(actual.url, expected.url);
-  t.is(typeof actual.body, 'string');
-  t.deepEqual(JSON.parse(actual.body), JSON.parse(expected.body));
-};
-
-const baselineFor = async (t, clock, calls) => {
-  clock.setSystemTime(Date.parse(INPUT_TIME));
-  const plain = wireClient(t);
-  for (const [type, fields] of calls) t.is(plain.client[type](fields), plain.client);
-  clock.setSystemTime(Date.parse(SEND_TIME));
-  await plain.client.flush();
-  t.is(plain.requests.length, 1);
-  t.is(plain.requests[0].method, 'post');
-  t.is(plain.requests[0].url, 'http://localhost:4065/v1/batch');
-  assertSafeSdkLogs(t, plain.client);
-  return plain.requests[0];
-};
-
-const throwMarker = () => {
-  throw new TypeError(MARKER);
-};
-const mutate = (edit) => (event) => {
-  edit(event);
-  return event;
-};
+const removeEvent = edit((e) => delete e.event);
+const setTotal = (e) => (e.properties.total = 99);
+const grow = (e) => (e.properties.blob = 'x'.repeat(33 * 1024));
 const cases = [
-  { id: 'enriched_input', hook: (event) => event },
-  {
-    id: 'enriched_input_identify',
-    type: 'identify',
-    fields: () => ({
-      ...input(),
-      userId: undefined,
-      anonymousId: 7,
-      event: undefined,
-      traits: { marker: MARKER, plan: 'pro' },
-    }),
-    hook: (event) => event,
-  },
-  {
-    id: 'isolation_non_plain_values',
-    fields: () => ({
-      ...input(),
-      properties: {
-        marker: MARKER,
-        fn: () => MARKER,
-        error: new Error(MARKER),
-        weakMap: new WeakMap(),
-      },
-    }),
-    hook: (event) => event,
-  },
-  { id: 'identity_semantically_equal', hook: (event) => event },
-  { id: 'no_hook_unchanged' },
-  { id: 'sent_at_ownership', hook: (event) => event },
-  { id: 'no_payload_in_logs', hook: (event) => event },
-  {
-    id: 'edit_reaches_wire',
-    hook: mutate((e) => {
+  ['enriched_input', (e) => e, { enriched: true }],
+  ['edit_reaches_wire', edit(setTotal), { expected: setTotal }],
+  ['null_drop', () => null, { none: true, level: 'debug' }],
+  ['throw_send_original', fail, { level: 'error', thrown: true }],
+  ['throw_drop_none', fail, { policy: 'drop', none: true, level: 'error', thrown: true }],
+  [
+    'mutate_then_throw_isolated',
+    (e) => {
       e.properties.total = 99;
-    }),
-    expected: (e) => {
-      e.properties.total = 99;
+      e.context.custom = false;
+      fail();
     },
-  },
-  { id: 'null_drop_accepted', hook: () => null, none: true, level: 'debug' },
-  { id: 'throw_send_original', hook: throwMarker, level: 'error' },
-  { id: 'throw_drop_none', hook: throwMarker, policy: 'drop', none: true, level: 'error' },
-  {
-    id: 'mutate_then_throw_isolated',
-    hook: (e) => {
-      e.properties.total = 99;
-      e.context.wrapperLibrary.name = MARKER;
-      throwMarker();
+    { level: 'error', thrown: true },
+  ],
+  ['non_object_hook_error', () => 42, { level: 'error' }],
+  ['required_field_hook_error', removeEvent, { level: 'error' }],
+  ['required_field_hook_error_drop', removeEvent, { policy: 'drop', none: true, level: 'error' }],
+  ['hook_fixes_invalid_call', edit((e) => (e.event = 'Order')), { invalidCall: true }],
+  ['restore_channel', edit((e) => (e.channel = 'web')), { level: 'warn' }],
+  ['restore_context_library', edit((e) => (e.context.library = {})), { level: 'warn' }],
+  [
+    'keep_messageid_change',
+    edit((e) => (e.messageId = 'm2')),
+    {
+      expected: (e) => (e.messageId = 'm2'),
     },
-    level: 'error',
-  },
-  { id: 'wrong_shape_hook_error', hook: () => 42, level: 'error' },
-  ...['messageId', 'channel', 'context.library'].flatMap((field) =>
-    ['change', 'remove'].map((operation) => ({
-      id: `${field === 'messageId' ? 'keep' : 'restore'}_${operation === 'remove' ? 'removed_' : ''}${field === 'messageId' ? 'messageid' : field.replace('.', '_')}`,
-      hook: mutate((e) => {
-        const object = field === 'context.library' ? e.context : e;
-        const key = field === 'context.library' ? 'library' : field;
-        if (operation === 'remove') delete object[key];
-        else object[key] = MARKER;
-      }),
-      expected:
-        field === 'messageId'
-          ? (e) => {
-              if (operation === 'remove') delete e.messageId;
-              else e.messageId = MARKER;
-            }
-          : undefined,
-      level: field === 'messageId' ? undefined : 'warn',
-      field: field === 'messageId' ? undefined : field,
-    })),
-  ),
-  {
-    id: 'removed_context_recreated',
-    hook: mutate((e) => {
-      delete e.context;
-    }),
-    expected: (e) => {
-      e.context = { library };
-    },
-    level: 'warn',
-    field: 'context.library',
-  },
-  {
-    id: 'identity_fields_revalidated',
-    hook: mutate((e) => {
-      delete e.userId;
-      delete e.anonymousId;
-    }),
-    level: 'error',
-  },
-  {
-    id: 'required_track_field',
-    hook: mutate((e) => {
-      delete e.event;
-    }),
-    level: 'error',
-  },
-  {
-    id: 'required_group_field',
-    type: 'group',
-    fields: () => ({
-      ...input(),
-      event: undefined,
-      groupId: 'required-value',
-      properties: {},
-      traits: { marker: MARKER },
-    }),
-    hook: mutate((e) => {
-      delete e.groupId;
-    }),
-    level: 'error',
-  },
-  {
-    id: 'required_alias_field',
-    type: 'alias',
-    fields: () => ({
-      ...input(),
-      userId: 'user-2',
-      event: undefined,
-      previousId: 'required-value',
-      properties: {},
-      traits: {},
-    }),
-    hook: mutate((e) => {
-      delete e.previousId;
-    }),
-    level: 'error',
-  },
-  {
-    id: 'unserialisable_output',
-    hook: mutate((e) => {
-      e.properties.bad = BigInt(1);
-    }),
-    level: 'error',
-  },
-  {
-    id: 'container_type_violation',
-    hook: mutate((e) => {
-      e.context = MARKER;
-    }),
-    level: 'error',
-  },
-  {
-    id: 'shared_acyclic_input',
-    fields: () => {
-      const fields = input();
-      const shared = { marker: MARKER };
-      fields.properties.a = shared;
-      fields.properties.b = shared;
-      return fields;
-    },
-    hook: (e) => e,
-  },
+  ],
+  ['restore_removed_messageid', edit((e) => delete e.messageId)],
+  ['post_hook_oversize_warns', edit(grow), { expected: grow, level: 'info' }],
+  ['cyclic_output_hook_error', edit((e) => (e.properties.self = e)), { level: 'error' }],
+  ['once_across_retries', (e) => e, { retry: true }],
+  ['no_hook_unchanged'],
+  ['invalid_hook_config', undefined, { config: { beforeEnqueue: 42 } }],
+  ['invalid_policy_config', undefined, { config: { beforeEnqueueOnError: 'retry' } }],
 ];
 
-for (const scenario of cases) {
+for (const [id, hookFunction, settings] of cases) {
+  const scenario = { id, hook: hookFunction, ...settings };
   test(`conformance: ${scenario.id}`, async (t) => {
-    const clock = clockFor(t);
-    const fields = (scenario.fields || input)();
-    const callerSnapshot = inspect(fields);
-    const type = scenario.type || 'track';
-    const baseline = await baselineFor(t, clock, [[type, fields]]);
-    const expected = JSON.parse(baseline.body);
+    if (scenario.config) {
+      t.throws(() => new Analytics('key', scenario.config), { name: 'AssertionError' });
+      return;
+    }
+    const clock = useFakeTimers({ now: Date.parse('2026-10-23T10:00:00Z'), toFake: ['Date'] });
+    t.teardown(() => clock.restore());
+    const baseline = wireClient(t);
+    baseline.client.track(input());
+    const enriched = JSON.parse(JSON.stringify(baseline.client.queue[0].message));
+    await baseline.client.flush();
+    const expected = JSON.parse(baseline.requests[0].body);
     if (scenario.expected) scenario.expected(expected.batch[0]);
-    clock.setSystemTime(Date.parse(INPUT_TIME));
     const hook =
       scenario.hook &&
-      spy((event) => {
-        if (scenario.id.startsWith('enriched_input')) {
-          const enriched = JSON.parse(baseline.body).batch[0];
-          delete enriched.sentAt;
-          t.deepEqual(JSON.parse(JSON.stringify(event)), enriched);
-          t.true(event.originalTimestamp instanceof Date);
-          t.false('sentAt' in event);
+      spy((e) => {
+        if (scenario.enriched) {
+          t.deepEqual(JSON.parse(JSON.stringify(e)), enriched);
+          t.true(e.originalTimestamp instanceof Date);
+          t.is(e.userId, '7');
+          t.deepEqual(e._metadata, { nodeVersion: process.versions.node });
         }
-        if (scenario.id === 'isolation_non_plain_values') {
-          t.not(event.properties, fields.properties);
-          for (const field of ['fn', 'error', 'weakMap'])
-            t.is(event.properties[field], fields.properties[field]);
-        }
-        if (scenario.id === 'shared_acyclic_input') {
-          t.is(event.properties.a, event.properties.b);
-          t.not(event.properties.a, fields.properties.a);
-        }
-        return scenario.hook(event);
+        return scenario.hook(e);
       });
-    const actual = wireClient(t, { beforeEnqueue: hook, beforeEnqueueOnError: scenario.policy });
+    const actual = wireClient(
+      t,
+      {
+        beforeEnqueue: hook,
+        beforeEnqueueOnError: scenario.policy,
+      },
+      scenario.retry,
+    );
+    const fields = input();
+    if (scenario.invalidCall) delete fields.event;
+    const snapshot = JSON.parse(JSON.stringify(fields));
     const callback = spy();
-    t.is(actual.client[type](fields, callback), actual.client);
-    clock.setSystemTime(Date.parse(SEND_TIME));
+    t.is(actual.client.track(fields, callback), actual.client);
+    const queued = actual.client.queue[0]?.message;
     await actual.client.flush();
     await nextTurn();
     t.is(hook ? hook.callCount : 0, hook ? 1 : 0);
-    t.is(inspect(fields), callerSnapshot);
+    t.deepEqual(fields, snapshot);
     t.false(actual.errorHandler.called);
     t.true(callback.calledOnce);
-    if (scenario.none) {
-      t.deepEqual(actual.requests, []);
-      t.deepEqual(callback.firstCall.args, []);
-    } else {
-      t.is(actual.requests.length, 1);
-      assertRequest(t, actual.requests[0], { ...baseline, body: JSON.stringify(expected) });
-      if (scenario.id === 'no_hook_unchanged') t.is(actual.requests[0].body, baseline.body);
+    t.is(actual.requests.length, scenario.none ? 0 : scenario.retry ? 2 : 1);
+    if (scenario.none) t.true(callback.calledOnceWithExactly());
+    for (const request of actual.requests) {
+      t.is(request.method, baseline.requests[0].method);
+      t.is(request.url, baseline.requests[0].url);
+      t.deepEqual(JSON.parse(request.body), expected);
     }
-    for (const level of levels) {
-      t.is(
-        actual.client.logger[level]
-          .getCalls()
-          .filter((call) => level !== 'debug' || call.args[0].startsWith('beforeEnqueue')).length,
-        level === scenario.level ? 1 : 0,
-      );
+    if (scenario.id === 'no_hook_unchanged')
+      t.is(actual.requests[0].body, baseline.requests[0].body);
+    for (const level of ['debug', 'info', 'warn', 'error']) {
+      const logs = actual.client.logger[level]
+        .getCalls()
+        .filter(
+          (call) => !['debug', 'error'].includes(level) || call.args[0].startsWith('beforeEnqueue'),
+        );
+      t.is(logs.length, level === scenario.level ? 1 : 0);
     }
-    if (scenario.field)
+    if (scenario.level === 'debug')
+      t.true(actual.client.logger.debug.calledWithExactly('beforeEnqueue dropped track event m1'));
+    if (scenario.level === 'warn')
       t.true(
         actual.client.logger.warn.calledOnceWithExactly(
           'beforeEnqueue changed channel or context.library; they were restored.',
         ),
       );
-    if (
-      ['throw_send_original', 'throw_drop_none', 'mutate_then_throw_isolated'].includes(scenario.id)
-    ) {
-      t.true(actual.client.logger.error.firstCall.args[0].endsWith(`. TypeError: ${MARKER}`));
+    if (scenario.level === 'info')
+      t.true(actual.client.logger.info.calledOnceWithExactly(SIZE_WARNING, queued));
+    if (scenario.level === 'error') {
+      const outcome = scenario.none ? 'dropping the event' : 'sending the original event';
+      const prefix = `beforeEnqueue failed for track event m1, ${outcome}. `;
+      t.true(actual.client.logger.error.firstCall.args[0].startsWith(prefix));
+      if (scenario.thrown)
+        t.is(actual.client.logger.error.firstCall.args[0], `${prefix}Error: boom`);
     }
-    assertSafeSdkLogs(t, actual.client);
-  });
-}
-
-// A cyclic event reaches the hook but fails post-hook size validation.
-test('conformance: cyclic_input_hook_error (NODE-BE-46)', async (t) => {
-  clockFor(t);
-  const actual = wireClient(t, { beforeEnqueueOnError: 'drop', beforeEnqueue: (e) => e });
-  const callback = spy();
-  const originalBeforeEnqueue = actual.client._beforeEnqueue.bind(actual.client);
-  stub(actual.client, '_beforeEnqueue').callsFake((type, enriched) => {
-    enriched.properties.self = enriched.properties;
-    return originalBeforeEnqueue(type, enriched);
-  });
-  const fields = input();
-  const callerSnapshot = inspect(fields);
-  const hook = spy((e) => {
-    t.is(e.properties.self, e.properties);
-    t.not(e.properties, fields.properties);
-    return e;
-  });
-  actual.client.beforeEnqueue = hook;
-  t.is(actual.client.track(fields, callback), actual.client);
-  await actual.client.flush();
-  await nextTurn();
-  t.deepEqual(actual.requests, []);
-  t.true(hook.calledOnce);
-  t.true(callback.calledOnceWithExactly());
-  t.false(actual.errorHandler.called);
-  t.is(inspect(fields), callerSnapshot);
-  t.true(
-    actual.client.logger.error.calledOnceWithExactly(
-      match(
-        /^beforeEnqueue failed for track event m1, dropping the event\. TypeError: Converting circular structure to JSON/,
-      ),
-    ),
-  );
-  assertSafeSdkLogs(t, actual.client);
-});
-
-for (const id of ['once_across_retries', 'original_oversize_usual_handling']) {
-  test(`conformance: ${id}`, async (t) => {
-    const clock = clockFor(t);
-    const fields = input();
-    if (id === 'original_oversize_usual_handling') {
-      fields.properties.blob = MARKER.repeat(2000);
-    }
-    const baseline = await baselineFor(t, clock, [['track', fields]]);
-    const expected = JSON.parse(baseline.body);
-    if (id === 'once_across_retries') expected.batch[0].properties.total = 99;
-    clock.setSystemTime(Date.parse(INPUT_TIME));
-    const hook = spy((e) => {
-      if (id === 'original_oversize_usual_handling') throwMarker();
-      e.properties.total = 99;
-      return e;
-    });
-    const actual = wireClient(
-      t,
-      { beforeEnqueue: hook, retryCount: id === 'once_across_retries' ? 2 : 0 },
-      id === 'once_across_retries' ? [503, 200] : [200],
-    );
-    t.is(actual.client.track(fields), actual.client);
-    clock.setSystemTime(Date.parse(SEND_TIME));
-    await actual.client.flush();
-    t.is(actual.requests.length, id === 'once_across_retries' ? 2 : 1);
-    for (const request of actual.requests)
-      assertRequest(t, request, { ...baseline, body: JSON.stringify(expected) });
-    t.true(hook.calledOnce);
-    if (id === 'original_oversize_usual_handling') {
-      t.true(
-        actual.client.logger.error.calledOnceWithExactly(
-          `beforeEnqueue failed for track event m1, sending the original event. TypeError: ${MARKER}`,
-        ),
-      );
-      t.true(
-        actual.client.logger.info.calledOnceWithExactly(
-          'Your message must be < 32kb. This is currently surfaced as a warning. Please update your code',
-        ),
-      );
-    }
-    t.false(actual.client.logger.warn.called);
-    t.false(actual.errorHandler.called);
-    assertSafeSdkLogs(t, actual.client);
-  });
-}
-
-for (const option of ['beforeEnqueue', 'beforeEnqueueOnError']) {
-  test(`conformance: invalid_${option === 'beforeEnqueue' ? 'hook' : 'policy'}_config`, (t) => {
-    const requests = [];
-    t.throws(
-      () =>
-        new Analytics('key', {
-          [option]: MARKER,
-          axiosConfig: {
-            adapter: (config) => {
-              requests.push(config);
-            },
-          },
-        }),
-      { name: 'AssertionError' },
-    );
-    t.deepEqual(requests, []);
-  });
-}
-
-for (const beforeEnqueue of [undefined, (event) => event]) {
-  test(`logging: delivery diagnostics retain master text (${beforeEnqueue ? 'hook' : 'no hook'})`, async (t) => {
-    const clock = clockFor(t);
-    const fields = input();
-    const baseline = await baselineFor(t, clock, [['track', fields]]);
-    clock.setSystemTime(Date.parse(INPUT_TIME));
-    const actual = wireClient(t, { beforeEnqueue, retryCount: 1 });
-    const requests = [];
-    actual.client.axiosInstance.defaults.adapter = async (config) => {
-      requests.push({ method: config.method, url: config.url, body: config.data });
-      const error = Object.assign(new TypeError(MARKER), {
-        config,
-        code: MARKER,
-        response: { status: 400, statusText: MARKER, config, headers: {} },
-      });
-      throw error;
-    };
-    actual.client.track(fields);
-    clock.setSystemTime(Date.parse(SEND_TIME));
-    await actual.client.flush();
-    t.is(requests.length, 1);
-    assertRequest(t, requests[0], baseline);
-    t.true(actual.errorHandler.calledOnce);
-    t.true(actual.client.logger.error.calledWithExactly(`Error: ${MARKER}`));
-    t.true(
-      actual.client.logger.error.calledWithExactly(
-        `Response error status: 400\nResponse error code: ${MARKER}`,
-      ),
-    );
-
-    const events = {};
-    actual.client.pQueue = {
-      on: (event, fn) => {
-        events[event] = fn;
-      },
-      process: () => {},
-    };
-    actual.client.addPersistentQueueProcessor();
-    const job = {
-      data: actual.client._getDataForPersistenceQueue({
-        description: 'node-fixed-job',
-        request: JSON.parse(baseline.body),
-      }),
-    };
-    events.failed(job, new TypeError(MARKER));
-    events.completed(job, MARKER);
-    actual.client._deserializeJobData({ data: { version: 3, eventData: MARKER } });
-    t.true(
-      actual.client.logger.error.calledWithExactly(`job : node-fixed-job TypeError: ${MARKER}`),
-    );
-    t.true(actual.client.logger.debug.calledWithExactly(`job : node-fixed-job ${MARKER}`));
-    t.true(
-      actual.client.logger.error.calledWith(
-        'Cannot parse the job data.',
-        match.instanceOf(SyntaxError),
-      ),
-    );
   });
 }

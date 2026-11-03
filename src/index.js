@@ -566,7 +566,7 @@ class Analytics {
       looselyValidate(message, type);
     } catch (e) {
       if (e.message === SIZE_ERROR) {
-        this.logger.info(SIZE_WARNING);
+        this.logger.info(SIZE_WARNING, message);
         return;
       }
       throw e;
@@ -829,6 +829,9 @@ class Analytics {
       }
       event.channel = channel;
       event.context = { ...event.context, library };
+      if (!event.messageId) {
+        event.messageId = message.messageId;
+      }
     } catch (err) {
       const failed = `beforeEnqueue failed for ${type} event ${message.messageId}`;
       if (this.beforeEnqueueOnError === 'drop') {

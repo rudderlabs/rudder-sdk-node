@@ -104,7 +104,7 @@ const client = new Analytics(WRITE_KEY, {
 
 If the hook throws, returns anything other than an event or `null`, or returns an event that fails the call's validation (for example, no `userId` or `anonymousId`), the SDK logs the error and sends the original event, or drops it with `beforeEnqueueOnError: 'drop'`. An event of 32KB or larger is sent with the usual size warning, as without a hook.
 
-The hook may change `messageId`. Changes to `channel` and `context.library` are reverted with a warning. A non-function `beforeEnqueue` or a `beforeEnqueueOnError` other than `'send'` or `'drop'` throws when the client is created.
+The hook may change `messageId`; the changed value is kept. If it is missing or empty, the original is restored without a warning. Changes to `channel` and `context.library` are reverted with one warning. A non-function `beforeEnqueue` or a `beforeEnqueueOnError` other than `'send'` or `'drop'` throws when the client is created.
 
 Retry hooks in `axiosRetryConfig` receive credential-redacted error and request snapshots.
 The snapshots omit authentication, raw requests, agents, functions, and other live transport objects.
