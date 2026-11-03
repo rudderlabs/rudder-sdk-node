@@ -559,9 +559,7 @@ class Analytics {
 
   _validate(message, type) {
     try {
-      // The hook boundary materialises messageId once and checks the complete event size.
-      // Keep the existing validation of other caller fields without invoking its serializer.
-      looselyValidate(this.beforeEnqueue ? { ...message, messageId: undefined } : message, type);
+      looselyValidate(message, type);
     } catch (e) {
       if (e.message === SIZE_ERROR) {
         // With a hook, the size is checked after it runs (see _beforeEnqueue())

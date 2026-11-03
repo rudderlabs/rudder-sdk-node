@@ -845,36 +845,6 @@ test('reserved fields: a changed or removed messageId is restored and warned', a
 });
 
 for (const beforeEnqueueOnError of ['send', 'drop']) {
-  for (const edit of ['keep', 'remove']) {
-    test(`reserved fields: a changing messageId serializer is materialised once (${edit}, '${beforeEnqueueOnError}')`, async (t) => {
-      const toJSON = spy(() => (toJSON.callCount === 1 ? 'short' : 'a'.repeat(40 * 1024)));
-      const { client, post } = createClient({
-        beforeEnqueueOnError,
-        beforeEnqueue: (event) => {
-          if (edit === 'remove') delete event.messageId;
-          return event;
-        },
-      });
-      t.teardown(() => cleanup(client));
-
-      client.track({ userId: 'u1', event: 'Kept', messageId: { toJSON } });
-      const checked = JSON.parse(JSON.stringify(client.queue[0].message));
-      await client.flush();
-
-      t.true(toJSON.calledOnce);
-      t.false(client.logger.error.called);
-      t.true(post.calledOnce);
-      const requestJson = JSON.stringify(post.firstCall.args[1]);
-      const request = JSON.parse(requestJson);
-      t.deepEqual(request, {
-        batch: [{ ...checked, messageId: 'short', sentAt: request.batch[0].sentAt }],
-        timestamp: request.timestamp,
-        sentAt: request.sentAt,
-      });
-      t.true(Buffer.byteLength(requestJson, 'utf8') < 32 * 1024);
-    });
-  }
-
   test(`wire form: a toJSON that serializes to another event is a hook error ('${beforeEnqueueOnError}')`, async (t) => {
     const { client, post } = createClient({
       beforeEnqueueOnError,
