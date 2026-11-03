@@ -65,9 +65,19 @@ interface constructorOptions {
  * Represents the event passed to and returned by beforeEnqueue
  */
 type BeforeEnqueueEvent = apiObject & {
-  type: string;
   messageId: string;
-};
+  channel: string;
+  context: apiObject;
+  originalTimestamp: Date | string;
+  _metadata: apiObject;
+} & (
+    | (IdentifyParams & { type: 'identify' })
+    | (TrackParams & { type: 'track' })
+    | (PageParams & { type: 'page' })
+    | (ScreenParams & { type: 'screen' })
+    | (GroupParams & { type: 'group' })
+    | (AliasParams & { type: 'alias' })
+  );
 type BeforeEnqueueCallback = (event: BeforeEnqueueEvent) => BeforeEnqueueEvent | null;
 
 /**

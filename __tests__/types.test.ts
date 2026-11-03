@@ -26,6 +26,22 @@ new Analytics('write-key', {
   beforeEnqueueOnError: 'drop',
 });
 
+new Analytics('write-key', {
+  beforeEnqueue: (event) => {
+    if (event.type === 'track') {
+      const name: string = event.event;
+    }
+    if (event.type === 'group') {
+      const groupId: string = event.groupId;
+    }
+    // @ts-expect-error event is a string only on track events.
+    const name: string = event.event;
+    // @ts-expect-error type is one of the API call types.
+    if (event.type === 'batch') return null;
+    return event;
+  },
+});
+
 const hook: Analytics.BeforeEnqueueCallback = (event: Analytics.BeforeEnqueueEvent) => event;
 new Analytics('write-key', { beforeEnqueue: hook, beforeEnqueueOnError: 'send' });
 
