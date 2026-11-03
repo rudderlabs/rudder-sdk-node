@@ -600,7 +600,9 @@ class Analytics {
 
   _validate(message, type) {
     try {
-      looselyValidate(message, type);
+      // The hook boundary materialises messageId once and checks the complete event size.
+      // Keep the existing validation of other caller fields without invoking its serializer.
+      looselyValidate(this.beforeEnqueue ? { ...message, messageId: undefined } : message, type);
     } catch (e) {
       if (e.message === SIZE_ERROR) {
         // With a hook, the size is checked after it runs (see _beforeEnqueue())
@@ -877,7 +879,20 @@ class Analytics {
    * @api private
    */
   _runBeforeEnqueue(type, message) {
-    const result = this.beforeEnqueue(cloneDeep(message));
+    // Snapshot caller-owned reserved values before the hook can serialize them. Reuse their
+    // wire form for the hook input and restoration, so getters and toJSON never run twice.
+    const reserved = {
+      messageId: JSON.parse(JSON.stringify(message.messageId)),
+      channel: JSON.parse(JSON.stringify(message.channel)),
+      library: JSON.parse(JSON.stringify(message.context.library)),
+    };
+    const input = cloneDeep({
+      ...message,
+      messageId: reserved.messageId,
+      channel: reserved.channel,
+      context: { ...message.context, library: reserved.library },
+    });
+    const result = this.beforeEnqueue(input);
     if (result === null) {
       return null;
     }
@@ -920,16 +935,16 @@ class Analytics {
     event.context = event.context || {};
 
     ['messageId', 'channel'].forEach((field) => {
-      if (event[field] !== message[field]) {
+      if (!isDeepStrictEqual(event[field], reserved[field])) {
         this.logger.warn(`beforeEnqueue changed the reserved field "${field}"; it was restored.`);
-        event[field] = message[field];
+        event[field] = reserved[field];
       }
     });
-    if (!isDeepStrictEqual(event.context.library, message.context.library)) {
+    if (!isDeepStrictEqual(event.context.library, reserved.library)) {
       this.logger.warn(
         'beforeEnqueue changed the reserved field "context.library"; it was restored.',
       );
-      event.context.library = message.context.library;
+      event.context.library = reserved.library;
     }
     const bytes = Buffer.byteLength(JSON.stringify(event), 'utf8');
     assert(
