@@ -174,15 +174,22 @@ const cases = [
   },
   ...['messageId', 'channel', 'context.library'].flatMap((field) =>
     ['change', 'remove'].map((operation) => ({
-      id: `restore_${operation === 'remove' ? 'removed_' : ''}${field === 'messageId' ? 'messageid' : field.replace('.', '_')}`,
+      id: `${field === 'messageId' ? 'keep' : 'restore'}_${operation === 'remove' ? 'removed_' : ''}${field === 'messageId' ? 'messageid' : field.replace('.', '_')}`,
       hook: mutate((e) => {
         const object = field === 'context.library' ? e.context : e;
         const key = field === 'context.library' ? 'library' : field;
         if (operation === 'remove') delete object[key];
         else object[key] = MARKER;
       }),
-      level: 'warn',
-      field,
+      expected:
+        field === 'messageId'
+          ? (e) => {
+              if (operation === 'remove') delete e.messageId;
+              else e.messageId = MARKER;
+            }
+          : undefined,
+      level: field === 'messageId' ? undefined : 'warn',
+      field: field === 'messageId' ? undefined : field,
     })),
   ),
   {
@@ -342,7 +349,7 @@ for (const scenario of cases) {
     if (scenario.field)
       t.true(
         actual.client.logger.warn.calledOnceWithExactly(
-          `beforeEnqueue changed the reserved field "${scenario.field}"; it was restored.`,
+          `beforeEnqueue changed reserved fields (${scenario.field}); they were restored.`,
         ),
       );
     assertSafeSdkLogs(t, actual.client);
@@ -386,7 +393,7 @@ test('conformance: cyclic_input_hook_error (NODE-BE-46)', async (t) => {
 });
 
 for (const id of [
-  'retained_result_distinct_ids',
+  'retained_result_keeps_id',
   'frozen_result_unchanged',
   'once_across_retries',
   'original_oversize_usual_handling',
@@ -408,10 +415,10 @@ for (const id of [
       fields.properties.blob = MARKER.repeat(Math.floor((32768 - bytes) / MARKER.length) + 1);
     }
     const calls = [['track', fields]];
-    if (id === 'retained_result_distinct_ids')
-      calls.push(['track', { ...fields, messageId: 'm2' }]);
+    if (id === 'retained_result_keeps_id') calls.push(['track', { ...fields, messageId: 'm2' }]);
     const baseline = await baselineFor(t, clock, calls);
     const expected = JSON.parse(baseline.body);
+    if (id === 'retained_result_keeps_id') expected.batch[1].messageId = 'm1';
     if (id === 'once_across_retries') expected.batch[0].properties.total = 99;
     clock.setSystemTime(Date.parse(INPUT_TIME));
     let retained;
@@ -444,12 +451,13 @@ for (const id of [
       assertRequest(t, request, { ...baseline, body: JSON.stringify(expected) });
     t.is(hook.callCount, calls.length);
     t.is(inspect(retained), retainedSnapshot);
-    if (id === 'retained_result_distinct_ids') t.is(retained.messageId, 'm1');
+    if (id === 'retained_result_keeps_id') t.is(retained.messageId, 'm1');
     if (id === 'frozen_result_unchanged') t.is(retained.channel, 'web');
     if (id === 'original_oversize_usual_handling') {
       t.true(actual.client.logger.error.calledOnce);
       t.true(actual.client.logger.info.calledOnce);
-    } else if (id !== 'once_across_retries') t.true(actual.client.logger.warn.calledOnce);
+    } else if (id === 'frozen_result_unchanged') t.true(actual.client.logger.warn.calledOnce);
+    else t.false(actual.client.logger.warn.called);
     t.false(actual.errorHandler.called);
     assertSafeSdkLogs(t, actual.client);
   });

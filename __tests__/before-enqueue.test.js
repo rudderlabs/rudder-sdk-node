@@ -490,13 +490,8 @@ test('reserved fields: changes to channel and context.library are overwritten an
   t.is(sent.channel, 'server');
   t.deepEqual(sent.context, { tenant: 'acme', library });
   t.true(
-    client.logger.warn.calledWith(
-      'beforeEnqueue changed the reserved field "channel"; it was restored.',
-    ),
-  );
-  t.true(
-    client.logger.warn.calledWith(
-      'beforeEnqueue changed the reserved field "context.library"; it was restored.',
+    client.logger.warn.calledOnceWithExactly(
+      'beforeEnqueue changed reserved fields (channel, context.library); they were restored.',
     ),
   );
   t.false(client.logger.error.called);
@@ -515,7 +510,11 @@ test('reserved fields: a hook that removes context gets context.library back', a
   await client.flush();
 
   t.deepEqual(sentBatches(post)[0][0].context, { library });
-  t.true(client.logger.warn.calledOnce);
+  t.true(
+    client.logger.warn.calledOnceWithExactly(
+      'beforeEnqueue changed reserved fields (context.library); they were restored.',
+    ),
+  );
   cleanup(client);
 });
 
@@ -590,7 +589,7 @@ test("size: a hook that grows the event past 32KB is a hook error; 'send' sends 
   t.true(client.logger.error.calledOnce);
   t.regex(
     client.logger.error.firstCall.args[0],
-    /, sending the original event\. AssertionError \[ERR_ASSERTION\]: beforeEnqueue returned \d+ bytes; events must be < 32kb\.$/,
+    /, sending the original event\. AssertionError \[ERR_ASSERTION\]: Your message must be < 32kb\.$/,
   );
   t.false(client.logger.info.called);
   cleanup(client);
@@ -736,13 +735,18 @@ test('no hook: the queued event matches what an identity hook produces', (t) => 
   };
   const { client: plain } = createClient();
   const { client: hooked } = createClient({ beforeEnqueue: (event) => event });
+  t.teardown(() => {
+    cleanup(plain);
+    cleanup(hooked);
+  });
 
   plain.track(input);
   hooked.track(input);
 
-  // The hooked queue holds the serialized form (Dates as ISO strings), so compare wire JSON
+  // The JSON round-trip preserves wire JSON, and timestamp is restored to a Date.
   t.is(JSON.stringify(hooked.queue[0].message), JSON.stringify(plain.queue[0].message));
-  t.is(hooked.queue[0].message.timestamp, '1970-01-01T00:00:01.000Z');
+  t.true(hooked.queue[0].message.timestamp instanceof Date);
+  t.deepEqual(hooked.queue[0].message.timestamp, plain.queue[0].message.timestamp);
   t.false(hooked.logger.warn.called);
   t.false(hooked.logger.error.called);
   cleanup(plain);
@@ -824,22 +828,25 @@ test('options: a null beforeEnqueue means no hook', (t) => {
   cleanup(client);
 });
 
-test('reserved fields: a changed or removed messageId is restored and warned', async (t) => {
-  for (const edit of [(e) => (e.messageId = 'spoofed'), (e) => delete e.messageId]) {
+test('messageId: a changed or removed messageId is kept without a warning', async (t) => {
+  for (const [edit, expected] of [
+    [(e) => (e.messageId = 'spoofed'), 'spoofed'],
+    [(e) => delete e.messageId, undefined],
+  ]) {
     const { client, post } = createClient({
       beforeEnqueue: (event) => {
         edit(event);
         return event;
       },
     });
+    t.teardown(() => cleanup(client));
     client.track({ userId: 'u1', event: 'Kept', messageId: 'm1' });
     await client.flush();
-    t.is(sentBatches(post)[0][0].messageId, 'm1');
-    t.true(
-      client.logger.warn.calledOnceWithExactly(
-        'beforeEnqueue changed the reserved field "messageId"; it was restored.',
-      ),
-    );
+    const [[sent]] = sentBatches(post);
+    t.is(sent.messageId, expected);
+    t.is('messageId' in sent, expected !== undefined);
+    t.false(client.logger.warn.called);
+    t.false(client.logger.error.called);
     cleanup(client);
   }
 });
@@ -897,7 +904,7 @@ for (const beforeEnqueueOnError of ['send', 'drop']) {
   });
 }
 
-test('wire form: the hook result is serialized once and its reserved fields restored', async (t) => {
+test('wire form: the hook result is serialized once and its messageId is kept', async (t) => {
   const toJSON = spy(function toJSON() {
     return {
       type: this.type,
@@ -915,13 +922,9 @@ test('wire form: the hook result is serialized once and its reserved fields rest
   await client.flush();
 
   const [[sent]] = sentBatches(post);
-  t.like(sent, { messageId: 'm1', properties: { edited: true } });
+  t.like(sent, { messageId: 'other', properties: { edited: true } });
   t.true(toJSON.calledOnce);
-  t.true(
-    client.logger.warn.calledOnceWithExactly(
-      'beforeEnqueue changed the reserved field "messageId"; it was restored.',
-    ),
-  );
+  t.false(client.logger.warn.called);
   cleanup(client);
 });
 
@@ -946,13 +949,14 @@ for (const beforeEnqueueOnError of ['send', 'drop']) {
     t.is(reads, 1);
     t.false(client.logger.error.called);
     const [[sent]] = sentBatches(post);
-    t.is(sent.timestamp, '1970-01-01T00:00:01.000Z');
+    t.true(sent.timestamp instanceof Date);
+    t.deepEqual(sent.timestamp, new Date(1000));
     cleanup(client);
   });
 }
 
 const SECRET = 'secret-pii-value';
-test('reserved fields: restoring a reused hook result does not change an event already queued', async (t) => {
+test('messageId: a reused hook result keeps its ID without changing an event already queued', async (t) => {
   let first;
   const { client, post } = createClient({
     beforeEnqueue: (event) => {
@@ -962,14 +966,18 @@ test('reserved fields: restoring a reused hook result does not change an event a
   });
 
   client.track({ userId: 'u1', event: 'Kept', messageId: 'm1' });
+  const firstQueued = client.queue[0].message;
   client.track({ userId: 'u1', event: 'Kept', messageId: 'm2' });
+  t.is(client.queue[0].message, firstQueued);
+  t.not(client.queue[1].message, firstQueued);
   await client.flush();
 
   t.deepEqual(
     sentBatches(post)[0].map((sent) => sent.messageId),
-    ['m1', 'm2'],
+    ['m1', 'm1'],
   );
   t.is(first.messageId, 'm1');
+  t.false(client.logger.warn.called);
   cleanup(client);
 });
 

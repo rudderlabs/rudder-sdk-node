@@ -836,11 +836,8 @@ class Analytics {
    * @api private
    */
   _runBeforeEnqueue(type, message) {
-    const reserved = {
-      messageId: message.messageId,
-      channel: message.channel,
-      library: message.context.library,
-    };
+    const { channel } = message;
+    const { library } = message.context;
     const result = this.beforeEnqueue(cloneDeep(message));
     if (result === null) {
       return null;
@@ -868,13 +865,15 @@ class Analytics {
     );
     assert(componentType(event) === 'object', 'beforeEnqueue must return an event object or null.');
     assert(event.type === type, `beforeEnqueue must not change the event type ("${type}").`);
-    // A Date serializes to an ISO string, so the wire timestamp must be one that parses
+    // A Date serializes to an ISO string; turn it back so the standard validation applies
     const { timestamp } = event;
-    assert(
-      !timestamp || (typeof timestamp === 'string' && !Number.isNaN(Date.parse(timestamp))),
-      '"timestamp" must be a date.',
-    );
-    looselyValidate({ ...event, timestamp: undefined }, type, { checkSize: false });
+    if (timestamp) {
+      assert(
+        typeof timestamp === 'string' && !Number.isNaN(Date.parse(timestamp)),
+        '"timestamp" must be a date.',
+      );
+      event.timestamp = new Date(timestamp);
+    }
     // Same ID coercion as enqueue() applies before the hook
     ['anonymousId', 'userId'].forEach((field) => {
       if (event[field] && !isString(event[field])) {
@@ -882,24 +881,21 @@ class Analytics {
       }
     });
     event.context = event.context || {};
-
-    ['messageId', 'channel'].forEach((field) => {
-      if (!isDeepStrictEqual(event[field], reserved[field])) {
-        this.logger.warn(`beforeEnqueue changed the reserved field "${field}"; it was restored.`);
-        event[field] = reserved[field];
-      }
-    });
-    if (!isDeepStrictEqual(event.context.library, reserved.library)) {
-      this.logger.warn(
-        'beforeEnqueue changed the reserved field "context.library"; it was restored.',
-      );
-      event.context.library = reserved.library;
+    const restored = [];
+    if (!isDeepStrictEqual(event.channel, channel)) {
+      event.channel = channel;
+      restored.push('channel');
     }
-    const bytes = Buffer.byteLength(JSON.stringify(event), 'utf8');
-    assert(
-      bytes < looselyValidate.MAX_SIZE,
-      `beforeEnqueue returned ${bytes} bytes; events must be < 32kb.`,
-    );
+    if (!isDeepStrictEqual(event.context.library, library)) {
+      event.context.library = library;
+      restored.push('context.library');
+    }
+    if (restored.length > 0) {
+      this.logger.warn(
+        `beforeEnqueue changed reserved fields (${restored.join(', ')}); they were restored.`,
+      );
+    }
+    looselyValidate(event, type);
     return event;
   }
 
