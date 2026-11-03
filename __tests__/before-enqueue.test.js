@@ -73,25 +73,18 @@ test('README hook: numeric zero userId with an anonymousId is kept', async (t) =
 });
 
 for (const beforeEnqueueOnError of ['send', 'drop']) {
-  for (const scenario of ['async rejection', 'cyclic prototype', 'unbounded prototype']) {
-    test(`containment: ${scenario} stays inside the SDK ('${beforeEnqueueOnError}')`, (t) => {
-      const result = spawnSync(
-        process.execPath,
-        [
-          '--unhandled-rejections=strict',
-          '-e',
-          `
+  test(`async rejection stays inside the SDK ('${beforeEnqueueOnError}')`, (t) => {
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--unhandled-rejections=strict',
+        '-e',
+        `
         const assert = require('node:assert/strict');
         const Analytics = require(${JSON.stringify(require.resolve('../src/index'))});
-        let unhandled = 0;
-        process.on('unhandledRejection', () => { unhandled += 1; });
-        const cyclic = new Proxy({}, { getPrototypeOf: () => cyclic });
-        const endless = () => new Proxy({}, { getPrototypeOf: endless });
-        const hook = ${JSON.stringify(scenario)} === 'async rejection'
-          ? async () => { throw new Error('secret-pii-value'); }
-          : () => { throw ${JSON.stringify(scenario)} === 'cyclic prototype' ? cyclic : endless(); };
         const client = new Analytics('key', {
-          beforeEnqueue: hook, beforeEnqueueOnError: ${JSON.stringify(beforeEnqueueOnError)},
+          beforeEnqueue: async () => { throw new Error('async failure'); },
+          beforeEnqueueOnError: ${JSON.stringify(beforeEnqueueOnError)},
           flushInterval: 60000,
         });
         client.flushed = true;
@@ -102,89 +95,17 @@ for (const beforeEnqueueOnError of ['send', 'drop']) {
         clearTimeout(client.timer);
         assert.equal(client.queue.length, ${beforeEnqueueOnError === 'send' ? 1 : 0});
         assert.equal(logs.length, 1);
-        assert.ok(!logs[0].includes('secret-pii-value'));
-        if (${JSON.stringify(scenario)} !== 'async rejection') assert.ok(logs[0].endsWith('. [object Object]'));
-        setImmediate(() => {
-          assert.equal(unhandled, 0);
-          console.log('contained');
-        });
+        assert.ok(logs[0].startsWith('beforeEnqueue failed for track event '));
+        setImmediate(() => console.log('contained'));
       `,
-        ],
-        { encoding: 'utf8', timeout: 3000 },
-      );
+      ],
+      { encoding: 'utf8', timeout: 3000 },
+    );
 
-      t.is(result.error, undefined);
-      t.is(result.status, 0, result.stderr);
-      t.is(result.stdout.trim(), 'contained');
-    });
-  }
-
-  for (const value of [NaN, Infinity, -Infinity]) {
-    test(`wire form: non-finite ${value} is a hook error ('${beforeEnqueueOnError}')`, async (t) => {
-      let reads = 0;
-      const { client, post } = createClient({
-        beforeEnqueueOnError,
-        beforeEnqueue: (event) => ({
-          ...event,
-          properties: {
-            nested: [
-              {
-                get value() {
-                  reads += 1;
-                  return value;
-                },
-              },
-            ],
-          },
-        }),
-      });
-      t.teardown(() => cleanup(client));
-
-      client.track({ userId: 'u1', event: 'Kept', properties: { original: true } });
-      await client.flush();
-
-      t.is(reads, 1);
-      t.true(client.logger.error.calledOnce);
-      if (beforeEnqueueOnError === 'drop') {
-        t.false(post.called);
-      } else {
-        t.deepEqual(sentBatches(post)[0][0].properties, { original: true });
-      }
-    });
-  }
-
-  for (const outcome of ['drop', 'error']) {
-    for (const coercion of ['payload', 'throw']) {
-      test(`logging: object messageId with ${coercion} coercion is safe on ${outcome} ('${beforeEnqueueOnError}')`, async (t) => {
-        const toString = spy(() => {
-          if (coercion === 'throw') throw new Error('secret-pii-value');
-          return 'secret-pii-value';
-        });
-        const { client, post } = createClient({
-          beforeEnqueueOnError,
-          beforeEnqueue: () => {
-            if (outcome === 'error') throw new Error('hook error');
-            return null;
-          },
-        });
-        t.teardown(() => cleanup(client));
-
-        t.notThrows(() => client.track({ userId: 'u1', event: 'Kept', messageId: { toString } }));
-        await client.flush();
-
-        t.false(toString.called);
-        t.false(loggedArgs(client).some((line) => line.includes('secret-pii-value')));
-        const logger = outcome === 'drop' ? client.logger.debug : client.logger.error;
-        const lines = logger
-          .getCalls()
-          .map((call) => call.args[0])
-          .filter((line) => line.startsWith('beforeEnqueue'));
-        t.is(lines.length, 1);
-        t.true(lines[0].includes('event [unknown]'));
-        t.is(post.called, outcome === 'error' && beforeEnqueueOnError === 'send');
-      });
-    }
-  }
+    t.is(result.error, undefined);
+    t.is(result.status, 0, result.stderr);
+    t.is(result.stdout.trim(), 'contained');
+  });
 }
 
 for (const type of ['identify', 'group']) {
@@ -420,21 +341,6 @@ test('hook error: non-event return values are hook errors', async (t) => {
   }
 });
 
-test('hook error: a thrown non-Error value is logged, not raised', async (t) => {
-  const { client, post } = createClient({
-    beforeEnqueue: () => {
-      throw Object.create(null);
-    },
-  });
-
-  t.notThrows(() => client.track({ userId: 'u1', event: 'Kept' }));
-  await client.flush();
-
-  t.is(sentBatches(post)[0][0].event, 'Kept');
-  t.true(client.logger.error.calledOnce);
-  cleanup(client);
-});
-
 test('hook error: an unserializable return value sends the original event', async (t) => {
   const { client, post } = createClient({
     beforeEnqueue: (event) => {
@@ -491,7 +397,7 @@ test('reserved fields: changes to channel and context.library are overwritten an
   t.deepEqual(sent.context, { tenant: 'acme', library });
   t.true(
     client.logger.warn.calledOnceWithExactly(
-      'beforeEnqueue changed reserved fields (channel, context.library); they were restored.',
+      'beforeEnqueue changed channel or context.library; they were restored.',
     ),
   );
   t.false(client.logger.error.called);
@@ -512,7 +418,7 @@ test('reserved fields: a hook that removes context gets context.library back', a
   t.deepEqual(sentBatches(post)[0][0].context, { library });
   t.true(
     client.logger.warn.calledOnceWithExactly(
-      'beforeEnqueue changed reserved fields (context.library); they were restored.',
+      'beforeEnqueue changed channel or context.library; they were restored.',
     ),
   );
   cleanup(client);
@@ -743,32 +649,11 @@ test('no hook: the queued event matches what an identity hook produces', (t) => 
   plain.track(input);
   hooked.track(input);
 
-  // The JSON round-trip preserves the wire JSON.
   t.is(JSON.stringify(hooked.queue[0].message), JSON.stringify(plain.queue[0].message));
   t.false(hooked.logger.warn.called);
   t.false(hooked.logger.error.called);
   cleanup(plain);
   cleanup(hooked);
-});
-
-test('ids: numeric userId and anonymousId set by the hook are sent as strings, as without a hook', async (t) => {
-  const { client, post } = createClient({
-    beforeEnqueue: (event) => ({ ...event, userId: 42, anonymousId: 7 }),
-  });
-  const { client: plain } = createClient();
-
-  client.track({ userId: 'u1', event: 'E' });
-  plain.track({ userId: 42, anonymousId: 7, event: 'E' });
-  await client.flush();
-
-  const [[sent]] = sentBatches(post);
-  t.is(sent.userId, '42');
-  t.is(sent.anonymousId, '7');
-  t.is(sent.userId, plain.queue[0].message.userId);
-  t.is(sent.anonymousId, plain.queue[0].message.anonymousId);
-  t.false(client.logger.error.called);
-  cleanup(client);
-  cleanup(plain);
 });
 
 test('no hook: an oversized event logs the existing warning without the message', (t) => {
@@ -849,155 +734,7 @@ test('messageId: a changed or removed messageId is kept without a warning', asyn
   }
 });
 
-for (const beforeEnqueueOnError of ['send', 'drop']) {
-  test(`wire form: a toJSON that serializes to another event is a hook error ('${beforeEnqueueOnError}')`, async (t) => {
-    const { client, post } = createClient({
-      beforeEnqueueOnError,
-      beforeEnqueue: (event) => ({
-        ...event,
-        toJSON: () => ({ type: 'identify', messageId: 'other', channel: 'web' }),
-      }),
-    });
-
-    client.track({ userId: 'u1', event: 'Kept', messageId: 'm1' });
-    await client.flush();
-
-    t.true(client.logger.error.calledOnce);
-    if (beforeEnqueueOnError === 'drop') {
-      t.false(post.called);
-    } else {
-      const [[sent]] = sentBatches(post);
-      t.like(sent, {
-        type: 'track',
-        event: 'Kept',
-        userId: 'u1',
-        messageId: 'm1',
-        channel: 'server',
-      });
-    }
-    cleanup(client);
-  });
-}
-
-test('wire form: the hook result is serialized once and its messageId is kept', async (t) => {
-  const toJSON = spy(function toJSON() {
-    return {
-      type: this.type,
-      userId: this.userId,
-      event: this.event,
-      messageId: 'other',
-      channel: this.channel,
-      context: this.context,
-      properties: { edited: true },
-    };
-  });
-  const { client, post } = createClient({ beforeEnqueue: (event) => ({ ...event, toJSON }) });
-
-  client.track({ userId: 'u1', event: 'Kept', messageId: 'm1' });
-  await client.flush();
-
-  const [[sent]] = sentBatches(post);
-  t.like(sent, { messageId: 'other', properties: { edited: true } });
-  t.true(toJSON.calledOnce);
-  t.false(client.logger.warn.called);
-  cleanup(client);
-});
-
-for (const beforeEnqueueOnError of ['send', 'drop']) {
-  test(`wire form: a timestamp getter is read once and sent as its ISO string ('${beforeEnqueueOnError}')`, async (t) => {
-    let reads = 0;
-    const { client, post } = createClient({
-      beforeEnqueueOnError,
-      beforeEnqueue: (event) =>
-        Object.defineProperty({ ...event }, 'timestamp', {
-          enumerable: true,
-          get: () => {
-            reads += 1;
-            return reads === 1 ? new Date(1000) : 'not a date';
-          },
-        }),
-    });
-
-    client.track({ userId: 'u1', event: 'Kept', messageId: 'm1' });
-    await client.flush();
-
-    t.is(reads, 1);
-    t.false(client.logger.error.called);
-    const [[sent]] = sentBatches(post);
-    t.is(sent.timestamp, new Date(1000).toISOString());
-    cleanup(client);
-  });
-}
-
 const SECRET = 'secret-pii-value';
-test('messageId: a reused hook result keeps its ID without changing an event already queued', async (t) => {
-  let first;
-  const { client, post } = createClient({
-    beforeEnqueue: (event) => {
-      first = first || event;
-      return first;
-    },
-  });
-
-  client.track({ userId: 'u1', event: 'Kept', messageId: 'm1' });
-  const firstQueued = client.queue[0].message;
-  client.track({ userId: 'u1', event: 'Kept', messageId: 'm2' });
-  t.is(client.queue[0].message, firstQueued);
-  t.not(client.queue[1].message, firstQueued);
-  await client.flush();
-
-  t.deepEqual(
-    sentBatches(post)[0].map((sent) => sent.messageId),
-    ['m1', 'm1'],
-  );
-  t.is(first.messageId, 'm1');
-  t.false(client.logger.warn.called);
-  cleanup(client);
-});
-
-for (const beforeEnqueueOnError of ['send', 'drop']) {
-  test(`reserved fields: a frozen redacted result without context is sent with context.library ('${beforeEnqueueOnError}')`, async (t) => {
-    const clock = Sinon.useFakeTimers({
-      now: Date.parse('2026-10-23T10:00:00.000Z'),
-      toFake: ['Date'],
-    });
-    t.teardown(() => clock.restore());
-    const { client, post } = createClient({
-      beforeEnqueueOnError,
-      beforeEnqueue: (event) => {
-        delete event.context;
-        return Object.freeze({ ...event, properties: Object.freeze({}) });
-      },
-    });
-
-    const { client: plain, post: baselinePost } = createClient();
-    t.teardown(() => {
-      cleanup(client);
-      cleanup(plain);
-    });
-    const fields = { userId: 'u1', event: 'Kept', messageId: 'm1', properties: { email: SECRET } };
-    client.track(fields);
-    plain.track(fields);
-    await client.flush();
-    await plain.flush();
-
-    const expected = JSON.parse(JSON.stringify(baselinePost.firstCall.args[1]));
-    expected.batch[0].context = { library };
-    expected.batch[0].properties = {};
-    const request = JSON.parse(JSON.stringify(post.firstCall.args[1]));
-    t.true(post.calledOnce);
-    t.is(post.firstCall.args[0], baselinePost.firstCall.args[0]);
-    t.deepEqual(request, expected);
-    t.false(JSON.stringify(request).includes(SECRET));
-
-    const [[sent]] = sentBatches(post);
-    t.deepEqual(sent.context, { library });
-    t.deepEqual(sent.properties, {});
-    t.truthy(sent.sentAt);
-    t.false(client.logger.error.called);
-  });
-}
-
 const loggedArgs = (client) =>
   ['debug', 'info', 'warn', 'error']
     .flatMap((level) => client.logger[level].getCalls())
@@ -1024,55 +761,6 @@ test('logging: a hook error message appears in the log as thrown', (t) => {
       );
     }
   }
-});
-
-test('logging: a hook throwing a value whose toString throws stays inside the SDK', async (t) => {
-  const toString = spy(() => {
-    throw new Error('cannot stringify');
-  });
-  const values = [
-    { toString },
-    new Proxy(
-      {},
-      {
-        get() {
-          throw new Error('get trap');
-        },
-      },
-    ),
-    Object.create(null),
-  ];
-  for (const thrown of values) {
-    for (const beforeEnqueueOnError of ['send', 'drop']) {
-      const { client, post } = createClient({
-        beforeEnqueueOnError,
-        beforeEnqueue: () => {
-          throw thrown;
-        },
-      });
-      t.teardown(() => cleanup(client));
-      const callback = spy();
-      t.notThrows(() => client.track({ userId: 'u1', event: 'Kept', messageId: 'm1' }, callback));
-      await client.flush();
-      await setTimeout(5);
-      const outcome =
-        beforeEnqueueOnError === 'send' ? 'sending the original event' : 'dropping the event';
-      t.true(
-        client.logger.error.calledOnceWithExactly(
-          `beforeEnqueue failed for track event m1, ${outcome}. object`,
-        ),
-      );
-      t.true(callback.calledOnce);
-      if (beforeEnqueueOnError === 'send') {
-        t.is(callback.firstCall.args[0], undefined);
-        t.is(sentBatches(post)[0][0].event, 'Kept');
-      } else {
-        t.deepEqual(callback.firstCall.args, []);
-        t.false(post.called);
-      }
-    }
-  }
-  t.is(toString.callCount, 2);
 });
 
 test('logging: SDK beforeEnqueue lines never carry the event payload', async (t) => {

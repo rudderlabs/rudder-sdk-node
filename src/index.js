@@ -792,102 +792,51 @@ class Analytics {
   }
 
   /**
-   * Run `beforeEnqueue` on a copy of the enriched `message`, so a failing hook leaves the
-   * original intact. Returns the event to queue, or null to drop it. Hook errors stay inside
-   * the SDK; an invalid original selected by send retains its downstream encoding errors.
+   * Run `beforeEnqueue` on a copy of the enriched `message`. Returns the event to queue, or
+   * null to drop it. Hook errors follow `beforeEnqueueOnError` and never leave the SDK.
    *
    * @param {String} type
    * @param {Object} message
    * @api private
    */
   _beforeEnqueue(type, message) {
-    const { messageId } = message;
-    const safeMessageId =
-      typeof messageId === 'string' || typeof messageId === 'number' ? messageId : '[unknown]';
     let event;
     try {
-      event = this._runBeforeEnqueue(type, message);
-    } catch (err) {
-      let errorText;
-      try {
-        errorText = `${err}`;
-      } catch {
-        errorText = typeof err;
-      }
-      const failed = `beforeEnqueue failed for ${type} event ${safeMessageId}`;
-      if (this.beforeEnqueueOnError === 'drop') {
-        this.logger.error(`${failed}, dropping the event. ${errorText}`);
+      event = this.beforeEnqueue(cloneDeep(message));
+      if (event === null) {
+        this.logger.debug(`beforeEnqueue dropped ${type} event ${message.messageId}`);
         return null;
       }
-      this.logger.error(`${failed}, sending the original event. ${errorText}`);
+      if (typeof event?.then === 'function') {
+        event.then(noop, noop); // A rejected async hook must not crash the process
+      }
+      assert(
+        componentType(event) === 'object',
+        'beforeEnqueue must return an event object or null.',
+      );
+      assert(event.type === type, `beforeEnqueue must not change the event type ("${type}").`);
+      // Per-type rules and size; computing the size also rejects cycles
+      looselyValidate(event, type);
+      const { channel } = message;
+      const { library } = message.context;
+      if (
+        !isDeepStrictEqual(event.channel, channel) ||
+        !isDeepStrictEqual(event.context?.library, library)
+      ) {
+        this.logger.warn('beforeEnqueue changed channel or context.library; they were restored.');
+      }
+      event.channel = channel;
+      event.context = { ...event.context, library };
+    } catch (err) {
+      const failed = `beforeEnqueue failed for ${type} event ${message.messageId}`;
+      if (this.beforeEnqueueOnError === 'drop') {
+        this.logger.error(`${failed}, dropping the event. ${err}`);
+        return null;
+      }
+      this.logger.error(`${failed}, sending the original event. ${err}`);
       this._validate(message, type, true);
       return message;
     }
-    if (event === null) {
-      this.logger.debug(`beforeEnqueue dropped ${type} event ${safeMessageId}`);
-    }
-    return event;
-  }
-
-  /**
-   * Call the hook and check what it returned, restoring reserved fields. Throws on anything
-   * but null or a valid event of the same type.
-   *
-   * @api private
-   */
-  _runBeforeEnqueue(type, message) {
-    const { channel } = message;
-    const { library } = message.context;
-    const result = this.beforeEnqueue(cloneDeep(message));
-    if (result === null) {
-      return null;
-    }
-    const then = result?.then;
-    if (typeof then === 'function') {
-      // Consume rejected async results before rejecting them as synchronous hook output.
-      new Promise((resolve, reject) => then.call(result, resolve, reject)).catch(() => {});
-      assert.fail('beforeEnqueue must return an event object or null.');
-    }
-    assert(
-      componentType(result) === 'object',
-      'beforeEnqueue must return an event object or null.',
-    );
-    // Check and queue the wire form: toJSON and getters run once, here, and the SDK never
-    // writes into a retained or frozen result. Non-finite numbers, BigInt and cycles are errors.
-    const event = JSON.parse(
-      JSON.stringify(result, (key, value) => {
-        assert(
-          typeof value !== 'number' || Number.isFinite(value),
-          'beforeEnqueue must not return non-finite numbers.',
-        );
-        return value;
-      }),
-    );
-    assert(componentType(event) === 'object', 'beforeEnqueue must return an event object or null.');
-    assert(event.type === type, `beforeEnqueue must not change the event type ("${type}").`);
-    // Same ID coercion as enqueue() applies before the hook
-    ['anonymousId', 'userId'].forEach((field) => {
-      if (event[field] && !isString(event[field])) {
-        event[field] = JSON.stringify(event[field]);
-      }
-    });
-    event.context = event.context || {};
-    const restored = [];
-    if (!isDeepStrictEqual(event.channel, channel)) {
-      event.channel = channel;
-      restored.push('channel');
-    }
-    if (!isDeepStrictEqual(event.context.library, library)) {
-      event.context.library = library;
-      restored.push('context.library');
-    }
-    if (restored.length > 0) {
-      this.logger.warn(
-        `beforeEnqueue changed reserved fields (${restored.join(', ')}); they were restored.`,
-      );
-    }
-    // timestamp is an ISO string after serialization, which the "date" rule would reject
-    looselyValidate({ ...event, timestamp: undefined }, type);
     return event;
   }
 

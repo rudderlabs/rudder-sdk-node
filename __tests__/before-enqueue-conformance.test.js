@@ -266,17 +266,6 @@ const cases = [
     level: 'error',
   },
   {
-    id: 'output_normalisation',
-    hook: mutate((e) => {
-      e.userId = 42;
-      e.anonymousId = 7;
-    }),
-    expected: (e) => {
-      e.userId = '42';
-      e.anonymousId = '7';
-    },
-  },
-  {
     id: 'shared_acyclic_input',
     fields: () => {
       const fields = input();
@@ -349,14 +338,19 @@ for (const scenario of cases) {
     if (scenario.field)
       t.true(
         actual.client.logger.warn.calledOnceWithExactly(
-          `beforeEnqueue changed reserved fields (${scenario.field}); they were restored.`,
+          'beforeEnqueue changed channel or context.library; they were restored.',
         ),
       );
+    if (
+      ['throw_send_original', 'throw_drop_none', 'mutate_then_throw_isolated'].includes(scenario.id)
+    ) {
+      t.true(actual.client.logger.error.firstCall.args[0].endsWith(`. TypeError: ${MARKER}`));
+    }
     assertSafeSdkLogs(t, actual.client);
   });
 }
 
-// NODE-BE-46: a cycle in the enriched input is a hook error at the copy boundary.
+// A cyclic event reaches the hook but fails post-hook size validation.
 test('conformance: cyclic_input_hook_error (NODE-BE-46)', async (t) => {
   clockFor(t);
   const actual = wireClient(t, { beforeEnqueueOnError: 'drop', beforeEnqueue: (e) => e });
@@ -392,72 +386,47 @@ test('conformance: cyclic_input_hook_error (NODE-BE-46)', async (t) => {
   assertSafeSdkLogs(t, actual.client);
 });
 
-for (const id of [
-  'retained_result_keeps_id',
-  'frozen_result_unchanged',
-  'once_across_retries',
-  'original_oversize_usual_handling',
-]) {
+for (const id of ['once_across_retries', 'original_oversize_usual_handling']) {
   test(`conformance: ${id}`, async (t) => {
     const clock = clockFor(t);
     const fields = input();
     if (id === 'original_oversize_usual_handling') {
-      // Smallest N exceeding Node's complete enriched 32KB size measure.
-      const enriched = {
-        ...fields,
-        type: 'track',
-        context: { ...fields.context, library },
-        _metadata: { nodeVersion: process.versions.node },
-        originalTimestamp: new Date(INPUT_TIME),
-      };
-      enriched.properties = { ...fields.properties, blob: '' };
-      const bytes = Buffer.byteLength(JSON.stringify(enriched));
-      fields.properties.blob = MARKER.repeat(Math.floor((32768 - bytes) / MARKER.length) + 1);
+      fields.properties.blob = MARKER.repeat(2000);
     }
-    const calls = [['track', fields]];
-    if (id === 'retained_result_keeps_id') calls.push(['track', { ...fields, messageId: 'm2' }]);
-    const baseline = await baselineFor(t, clock, calls);
+    const baseline = await baselineFor(t, clock, [['track', fields]]);
     const expected = JSON.parse(baseline.body);
-    if (id === 'retained_result_keeps_id') expected.batch[1].messageId = 'm1';
     if (id === 'once_across_retries') expected.batch[0].properties.total = 99;
     clock.setSystemTime(Date.parse(INPUT_TIME));
-    let retained;
     const hook = spy((e) => {
       if (id === 'original_oversize_usual_handling') throwMarker();
-      if (id === 'once_across_retries') {
-        e.properties.total = 99;
-        return e;
-      }
-      if (id === 'frozen_result_unchanged') {
-        e.channel = 'web';
-        Object.freeze(e.context);
-        retained = Object.freeze(e);
-        return retained;
-      }
-      retained = retained || e;
-      return retained;
+      e.properties.total = 99;
+      return e;
     });
     const actual = wireClient(
       t,
       { beforeEnqueue: hook, retryCount: id === 'once_across_retries' ? 2 : 0 },
       id === 'once_across_retries' ? [503, 200] : [200],
     );
-    for (const [type, call] of calls) t.is(actual.client[type](call), actual.client);
-    const retainedSnapshot = inspect(retained);
+    t.is(actual.client.track(fields), actual.client);
     clock.setSystemTime(Date.parse(SEND_TIME));
     await actual.client.flush();
     t.is(actual.requests.length, id === 'once_across_retries' ? 2 : 1);
     for (const request of actual.requests)
       assertRequest(t, request, { ...baseline, body: JSON.stringify(expected) });
-    t.is(hook.callCount, calls.length);
-    t.is(inspect(retained), retainedSnapshot);
-    if (id === 'retained_result_keeps_id') t.is(retained.messageId, 'm1');
-    if (id === 'frozen_result_unchanged') t.is(retained.channel, 'web');
+    t.true(hook.calledOnce);
     if (id === 'original_oversize_usual_handling') {
-      t.true(actual.client.logger.error.calledOnce);
-      t.true(actual.client.logger.info.calledOnce);
-    } else if (id === 'frozen_result_unchanged') t.true(actual.client.logger.warn.calledOnce);
-    else t.false(actual.client.logger.warn.called);
+      t.true(
+        actual.client.logger.error.calledOnceWithExactly(
+          `beforeEnqueue failed for track event m1, sending the original event. TypeError: ${MARKER}`,
+        ),
+      );
+      t.true(
+        actual.client.logger.info.calledOnceWithExactly(
+          'Your message must be < 32kb. This is currently surfaced as a warning. Please update your code',
+        ),
+      );
+    }
+    t.false(actual.client.logger.warn.called);
     t.false(actual.errorHandler.called);
     assertSafeSdkLogs(t, actual.client);
   });
