@@ -3,6 +3,8 @@ const { default: test } = require('ava');
 const Sinon = require('sinon');
 const { setTimeout } = require('node:timers/promises');
 const { AssertionError } = require('assert');
+const { spawnSync } = require('node:child_process');
+const { readFileSync } = require('node:fs');
 
 const Analytics = require('../src/index');
 const { version } = require('../package.json');
@@ -42,7 +44,7 @@ const cleanup = (client) => {
 const readmeHookOptions = {
   beforeEnqueue: (event) => {
     // Drop events from internal test accounts
-    if (event.userId?.startsWith('test-')) return null;
+    if (typeof event.userId === 'string' && event.userId.startsWith('test-')) return null;
     // Strip the email before it leaves the process
     for (const traits of [event.traits, event.context?.traits]) {
       if (traits && typeof traits === 'object') delete traits.email;
@@ -52,6 +54,138 @@ const readmeHookOptions = {
   // The hook redacts PII, so never fall back to the unredacted original
   beforeEnqueueOnError: 'drop',
 };
+
+test('README hook: numeric zero userId with an anonymousId is kept', async (t) => {
+  const readme = readFileSync(require.resolve('../README.md'), 'utf8');
+  const hook = readme.match(/beforeEnqueue: (\(event\) => \{[\s\S]*?\n {2}\}),/)[1];
+  const { client, post } = createClient({
+    beforeEnqueue: new Function(`return ${hook}`)(),
+    beforeEnqueueOnError: 'drop',
+  });
+  t.teardown(() => cleanup(client));
+
+  client.track({ userId: 0, anonymousId: 'a1', event: 'Kept' });
+  await client.flush();
+
+  t.true(post.calledOnce);
+  t.like(sentBatches(post)[0][0], { userId: 0, anonymousId: 'a1', event: 'Kept' });
+  t.false(client.logger.error.called);
+});
+
+for (const beforeEnqueueOnError of ['send', 'drop']) {
+  for (const scenario of ['async rejection', 'cyclic prototype', 'unbounded prototype']) {
+    test(`containment: ${scenario} stays inside the SDK ('${beforeEnqueueOnError}')`, (t) => {
+      const result = spawnSync(
+        process.execPath,
+        [
+          '--unhandled-rejections=strict',
+          '-e',
+          `
+        const assert = require('node:assert/strict');
+        const Analytics = require(${JSON.stringify(require.resolve('../src/index'))});
+        let unhandled = 0;
+        process.on('unhandledRejection', () => { unhandled += 1; });
+        const cyclic = new Proxy({}, { getPrototypeOf: () => cyclic });
+        const endless = () => new Proxy({}, { getPrototypeOf: endless });
+        const hook = ${JSON.stringify(scenario)} === 'async rejection'
+          ? async () => { throw new Error('secret-pii-value'); }
+          : () => { throw ${JSON.stringify(scenario)} === 'cyclic prototype' ? cyclic : endless(); };
+        const client = new Analytics('key', {
+          beforeEnqueue: hook, beforeEnqueueOnError: ${JSON.stringify(beforeEnqueueOnError)},
+          flushInterval: 60000,
+        });
+        client.flushed = true;
+        const logs = [];
+        client.logger.error = (line) => logs.push(line);
+        client.track({ userId: 'u1', event: 'Kept' });
+        clearTimeout(client.flushTimer);
+        clearTimeout(client.timer);
+        assert.equal(client.queue.length, ${beforeEnqueueOnError === 'send' ? 1 : 0});
+        assert.equal(logs.length, 1);
+        assert.ok(!logs[0].includes('secret-pii-value'));
+        if (${JSON.stringify(scenario)} !== 'async rejection') assert.ok(logs[0].includes('(object)'));
+        setImmediate(() => {
+          assert.equal(unhandled, 0);
+          console.log('contained');
+        });
+      `,
+        ],
+        { encoding: 'utf8', timeout: 3000 },
+      );
+
+      t.is(result.error, undefined);
+      t.is(result.status, 0, result.stderr);
+      t.is(result.stdout.trim(), 'contained');
+    });
+  }
+
+  for (const value of [NaN, Infinity, -Infinity]) {
+    test(`wire form: non-finite ${value} is a hook error ('${beforeEnqueueOnError}')`, async (t) => {
+      let reads = 0;
+      const { client, post } = createClient({
+        beforeEnqueueOnError,
+        beforeEnqueue: (event) => ({
+          ...event,
+          properties: {
+            nested: [
+              {
+                get value() {
+                  reads += 1;
+                  return value;
+                },
+              },
+            ],
+          },
+        }),
+      });
+      t.teardown(() => cleanup(client));
+
+      client.track({ userId: 'u1', event: 'Kept', properties: { original: true } });
+      await client.flush();
+
+      t.is(reads, 1);
+      t.true(client.logger.error.calledOnce);
+      if (beforeEnqueueOnError === 'drop') {
+        t.false(post.called);
+      } else {
+        t.deepEqual(sentBatches(post)[0][0].properties, { original: true });
+      }
+    });
+  }
+
+  for (const outcome of ['drop', 'error']) {
+    for (const coercion of ['payload', 'throw']) {
+      test(`logging: object messageId with ${coercion} coercion is safe on ${outcome} ('${beforeEnqueueOnError}')`, async (t) => {
+        const toString = spy(() => {
+          if (coercion === 'throw') throw new Error('secret-pii-value');
+          return 'secret-pii-value';
+        });
+        const { client, post } = createClient({
+          beforeEnqueueOnError,
+          beforeEnqueue: () => {
+            if (outcome === 'error') throw new Error('hook error');
+            return null;
+          },
+        });
+        t.teardown(() => cleanup(client));
+
+        t.notThrows(() => client.track({ userId: 'u1', event: 'Kept', messageId: { toString } }));
+        await client.flush();
+
+        t.false(toString.called);
+        t.false(loggedArgs(client).some((line) => line.includes('secret-pii-value')));
+        const logger = outcome === 'drop' ? client.logger.debug : client.logger.error;
+        const lines = logger
+          .getCalls()
+          .map((call) => call.args[0])
+          .filter((line) => line.startsWith('beforeEnqueue'));
+        t.is(lines.length, 1);
+        t.true(lines[0].includes('event [unknown]'));
+        t.is(post.called, outcome === 'error' && beforeEnqueueOnError === 'send');
+      });
+    }
+  }
+}
 
 for (const type of ['identify', 'group']) {
   test(`README hook: ${type} redacts email from both trait locations in the complete request`, async (t) => {
@@ -841,6 +975,11 @@ test('reserved fields: restoring a reused hook result does not change an event a
 
 for (const beforeEnqueueOnError of ['send', 'drop']) {
   test(`reserved fields: a frozen redacted result without context is sent with context.library ('${beforeEnqueueOnError}')`, async (t) => {
+    const clock = Sinon.useFakeTimers({
+      now: Date.parse('2026-10-23T10:00:00.000Z'),
+      toFake: ['Date'],
+    });
+    t.teardown(() => clock.restore());
     const { client, post } = createClient({
       beforeEnqueueOnError,
       beforeEnqueue: (event) => {
@@ -849,15 +988,31 @@ for (const beforeEnqueueOnError of ['send', 'drop']) {
       },
     });
 
-    client.track({ userId: 'u1', event: 'Kept', properties: { email: SECRET } });
+    const { client: plain, post: baselinePost } = createClient();
+    t.teardown(() => {
+      cleanup(client);
+      cleanup(plain);
+    });
+    const fields = { userId: 'u1', event: 'Kept', messageId: 'm1', properties: { email: SECRET } };
+    client.track(fields);
+    plain.track(fields);
     await client.flush();
+    await plain.flush();
+
+    const expected = JSON.parse(JSON.stringify(baselinePost.firstCall.args[1]));
+    expected.batch[0].context = { library };
+    expected.batch[0].properties = {};
+    const request = JSON.parse(JSON.stringify(post.firstCall.args[1]));
+    t.true(post.calledOnce);
+    t.is(post.firstCall.args[0], baselinePost.firstCall.args[0]);
+    t.deepEqual(request, expected);
+    t.false(JSON.stringify(request).includes(SECRET));
 
     const [[sent]] = sentBatches(post);
     t.deepEqual(sent.context, { library });
     t.deepEqual(sent.properties, {});
     t.truthy(sent.sentAt);
     t.false(client.logger.error.called);
-    cleanup(client);
   });
 }
 

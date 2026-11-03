@@ -164,7 +164,12 @@ const ERROR_TYPES = [
  */
 const errorLabel = (err) => {
   try {
+    const seen = new Set();
     for (let proto = Object.getPrototypeOf(err); proto; proto = Object.getPrototypeOf(proto)) {
+      if (seen.has(proto) || seen.size >= 100) {
+        break;
+      }
+      seen.add(proto);
       const type = ERROR_TYPES.find((ErrorType) => ErrorType.prototype === proto);
       if (type) {
         return type.name;
@@ -840,12 +845,14 @@ class Analytics {
    */
   _beforeEnqueue(type, message) {
     const { messageId } = message;
+    const safeMessageId =
+      typeof messageId === 'string' || typeof messageId === 'number' ? messageId : '[unknown]';
     let event;
     try {
       event = this._runBeforeEnqueue(type, message);
     } catch (err) {
       // Only a fixed label: the error's message, stack or name can quote the event
-      const failed = `beforeEnqueue failed for ${type} event ${messageId} (${errorLabel(err)})`;
+      const failed = `beforeEnqueue failed for ${type} event ${safeMessageId} (${errorLabel(err)})`;
       if (this.beforeEnqueueOnError === 'drop') {
         this.logger.error(`${failed}, dropping the event.`);
         return null;
@@ -858,7 +865,7 @@ class Analytics {
       return message;
     }
     if (event === null) {
-      this.logger.debug(`beforeEnqueue dropped ${type} event ${messageId}`);
+      this.logger.debug(`beforeEnqueue dropped ${type} event ${safeMessageId}`);
     }
     return event;
   }
@@ -874,13 +881,27 @@ class Analytics {
     if (result === null) {
       return null;
     }
+    const then = result?.then;
+    if (typeof then === 'function') {
+      // Consume rejected async results before rejecting them as synchronous hook output.
+      new Promise((resolve, reject) => then.call(result, resolve, reject)).catch(() => {});
+      assert.fail('beforeEnqueue must return an event object or null.');
+    }
     assert(
       componentType(result) === 'object',
       'beforeEnqueue must return an event object or null.',
     );
     // Check and queue the wire form: toJSON and getters run once, here, and the SDK never
-    // writes into a retained or frozen result. BigInt and cycles throw, as hook errors.
-    const event = JSON.parse(JSON.stringify(result));
+    // writes into a retained or frozen result. Non-finite numbers, BigInt and cycles are errors.
+    const event = JSON.parse(
+      JSON.stringify(result, (key, value) => {
+        assert(
+          typeof value !== 'number' || Number.isFinite(value),
+          'beforeEnqueue must not return non-finite numbers.',
+        );
+        return value;
+      }),
+    );
     assert(componentType(event) === 'object', 'beforeEnqueue must return an event object or null.');
     assert(event.type === type, `beforeEnqueue must not change the event type ("${type}").`);
     // A Date serializes to an ISO string, so the wire timestamp must be one that parses

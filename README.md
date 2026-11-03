@@ -90,7 +90,7 @@ const client = new Analytics(WRITE_KEY, {
   dataPlaneUrl: DATA_PLANE_URL,
   beforeEnqueue: (event) => {
     // Drop events from internal test accounts
-    if (event.userId?.startsWith('test-')) return null;
+    if (typeof event.userId === 'string' && event.userId.startsWith('test-')) return null;
     // Strip the email before it leaves the process
     for (const traits of [event.traits, event.context?.traits]) {
       if (traits && typeof traits === 'object') delete traits.email;
