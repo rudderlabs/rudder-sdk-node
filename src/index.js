@@ -841,20 +841,12 @@ class Analytics {
    * @api private
    */
   _runBeforeEnqueue(type, message) {
-    // Snapshot caller-owned reserved values before the hook can serialize them. Reuse their
-    // wire form for the hook input and restoration, so getters and toJSON never run twice.
     const reserved = {
-      messageId: JSON.parse(JSON.stringify(message.messageId)),
-      channel: JSON.parse(JSON.stringify(message.channel)),
-      library: JSON.parse(JSON.stringify(message.context.library)),
+      messageId: message.messageId,
+      channel: message.channel,
+      library: message.context.library,
     };
-    const input = cloneDeep({
-      ...message,
-      messageId: reserved.messageId,
-      channel: reserved.channel,
-      context: { ...message.context, library: reserved.library },
-    });
-    const result = this.beforeEnqueue(input);
+    const result = this.beforeEnqueue(cloneDeep(message));
     if (result === null) {
       return null;
     }
