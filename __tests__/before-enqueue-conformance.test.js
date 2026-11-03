@@ -81,7 +81,7 @@ const cases = [
     },
   ],
   ['restore_removed_messageid', edit((e) => delete e.messageId)],
-  ['post_hook_oversize_warns', edit(grow), { expected: grow, level: 'info' }],
+  ['post_hook_oversize_normal_handling', edit(grow), { expected: grow, level: 'info' }],
   ['cyclic_output_hook_error', edit((e) => (e.properties.self = e)), { level: 'error' }],
   ['once_across_retries', (e) => e, { retry: true }],
   ['no_hook_unchanged'],
