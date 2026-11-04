@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.1.0](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.18...v3.1.0) (2026-11-04)
+
+
+### Features
+
+* add beforeEnqueue hook to drop or edit events before queueing ([#511](https://github.com/rudderlabs/rudder-sdk-node/issues/511)) ([a06cfae](https://github.com/rudderlabs/rudder-sdk-node/commit/a06cfae5b2d01f9b068594ad035110665b2b2944))
+
+
+### Bug Fixes
+
+* **deps:** update follow-redirects to clear the high audit advisory ([#512](https://github.com/rudderlabs/rudder-sdk-node/issues/512)) ([38be988](https://github.com/rudderlabs/rudder-sdk-node/commit/38be9888defd14f8eb96166605ac19c29ef07e82))
+
+
+### Miscellaneous
+
+* **deps:** bump follow-redirects from 1.16.1 to 1.16.2 in /examples/async-flush ([#515](https://github.com/rudderlabs/rudder-sdk-node/issues/515)) ([728a565](https://github.com/rudderlabs/rudder-sdk-node/commit/728a56557d69c79592749a9d6b58dfc77e3f8422))
+* **deps:** bump follow-redirects from 1.16.1 to 1.16.2 in /examples/custom-axios ([#516](https://github.com/rudderlabs/rudder-sdk-node/issues/516)) ([0cf5b0c](https://github.com/rudderlabs/rudder-sdk-node/commit/0cf5b0c5ed09dd4bcddd8dfa766e9fc327064d1d))
+* **deps:** bump follow-redirects from 1.16.1 to 1.16.2 in /examples/sample-app ([#514](https://github.com/rudderlabs/rudder-sdk-node/issues/514)) ([153778f](https://github.com/rudderlabs/rudder-sdk-node/commit/153778f3b21b9330df8f49e03eb3421d366bdbbf))
+* move the PR title check to check-pr-title v2.0.3 ([#510](https://github.com/rudderlabs/rudder-sdk-node/issues/510)) ([92ad653](https://github.com/rudderlabs/rudder-sdk-node/commit/92ad6538b9e78763cce3815eda6a2a3bc6436db4))
+
 ## [3.0.18](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.17...v3.0.18) (2026-10-30)
 
 
