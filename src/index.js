@@ -812,6 +812,7 @@ class Analytics {
       }
       if (typeof event?.then === 'function') {
         event.then(noop, noop); // A rejected async hook must not crash the process
+        throw new Error('beforeEnqueue must be synchronous; it returned a Promise.');
       }
       assert(
         componentType(event) === 'object',

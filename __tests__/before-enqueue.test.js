@@ -41,6 +41,20 @@ test('edit reaches the wire', async (t) => {
   t.is(sent(post).properties.total, 99);
 });
 
+for (const policy of ['send', 'drop']) {
+  test(`event-shaped thenable is a hook error under ${policy} policy`, async (t) => {
+    const { client, post } = createClient(t, {
+      beforeEnqueueOnError: policy,
+      beforeEnqueue: (e) => ({ ...e, properties: { total: 99 }, then: (resolve) => resolve() }),
+    });
+    client.track(input());
+    await client.flush();
+    t.is(post.callCount, policy === 'send' ? 1 : 0);
+    if (policy === 'send') t.is(sent(post).properties.total, 42);
+    t.true(client.logger.error.calledOnce);
+  });
+}
+
 test('null drops the event and calls the callback without an error', async (t) => {
   const { client, post, errorHandler } = createClient(t, { beforeEnqueue: () => null });
   const callback = spy();
