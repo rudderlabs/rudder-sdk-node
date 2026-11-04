@@ -1,4 +1,4 @@
-// eslint-disable-next-line import/no-unresolved
+/* eslint-disable unicorn/filename-case -- `__tests__` is the test directory */
 const { default: test } = require('ava');
 const { AssertionError } = require('assert');
 const validate = require('../../src/loosely-validate-event');

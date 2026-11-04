@@ -49,7 +49,36 @@ interface constructorOptions {
   retryCount?: number;
   errorHandler?: (error?: any) => void;
   gzip?: boolean;
+  /**
+   * Called once per event, after enrichment and before queueing. Gets its own copy of
+   * the event; return it (edited or not) to send it, or null to drop it.
+   */
+  beforeEnqueue?: BeforeEnqueueCallback;
+  /**
+   * What to do with the event when beforeEnqueue throws or returns an invalid event.
+   * Defaults to 'send' (the original event). Use 'drop' when the hook redacts PII.
+   */
+  beforeEnqueueOnError?: 'send' | 'drop';
 }
+
+/**
+ * Represents the event passed to and returned by beforeEnqueue
+ */
+type BeforeEnqueueEvent = apiObject & {
+  messageId: string;
+  channel: string;
+  context: apiObject;
+  originalTimestamp: Date | string;
+  _metadata: apiObject;
+} & (
+    | (IdentifyParams & { type: 'identify' })
+    | (TrackParams & { type: 'track' })
+    | (PageParams & { type: 'page' })
+    | (ScreenParams & { type: 'screen' })
+    | (GroupParams & { type: 'group' })
+    | (AliasParams & { type: 'alias' })
+  );
+type BeforeEnqueueCallback = (event: BeforeEnqueueEvent) => BeforeEnqueueEvent | null;
 
 /**
  * Represents the callback in the APIs
@@ -131,6 +160,8 @@ declare class Analytics {
    *   @property {Number} [retryCount] (default: 3)
    *   @property {Function} [errorHandler] (optional)
    *   @property {Boolean} [gzip] (default: true)
+   *   @property {Function} [beforeEnqueue] (optional) returns the event to send, or null to drop it
+   *   @property {String} [beforeEnqueueOnError] (default: 'send') 'send' or 'drop' the event when beforeEnqueue fails
    */
   constructor(writeKey: string, options?: constructorOptions);
 
@@ -294,6 +325,8 @@ declare namespace Analytics {
     constructorOptions,
     apiCallback,
     FlushCallback,
+    BeforeEnqueueEvent,
+    BeforeEnqueueCallback,
     IdentifyParams,
     PageParams,
     TrackParams,

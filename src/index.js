@@ -8,6 +8,8 @@ const md5 = require('md5');
 const isString = require('lodash.isstring');
 const cloneDeep = require('lodash.clonedeep');
 const zlib = require('zlib');
+const { isDeepStrictEqual } = require('util');
+const componentType = require('component-type');
 const looselyValidate = require('./loosely-validate-event');
 const Logger = require('./Logger').Logger;
 const LOG_LEVEL_MAP = require('./Logger').LOG_LEVEL_MAP;
@@ -140,6 +142,9 @@ function safeRetryConfig(config = {}) {
   return safe;
 }
 
+const SIZE_ERROR = 'Your message must be < 32kb.';
+const SIZE_WARNING = `${SIZE_ERROR} This is currently surfaced as a warning. Please update your code`;
+
 class Analytics {
   /**
    * Initialize a new `Analytics` with your RudderStack source's `writeKey` and an
@@ -162,6 +167,8 @@ class Analytics {
    *   @property {Number} [retryCount] (default: 3)
    *   @property {Function} [errorHandler] (optional)
    *   @property {Boolean} [gzip] (default: true)
+   *   @property {Function} [beforeEnqueue] (optional) returns the event to send, or null to drop it
+   *   @property {String} [beforeEnqueueOnError] (default: 'send') 'send' or 'drop' the event when beforeEnqueue fails
    */
 
   constructor(writeKey, options) {
@@ -181,10 +188,20 @@ class Analytics {
       logLevel,
       enable,
       retryCount,
+      beforeEnqueue,
+      beforeEnqueueOnError,
     } = loadOptions;
     let { axiosInstance } = loadOptions;
 
     assert(writeKey, "You must pass your RudderStack project's write key.");
+    assert(
+      beforeEnqueue == null || typeof beforeEnqueue === 'function',
+      'beforeEnqueue must be a function.',
+    );
+    assert(
+      beforeEnqueueOnError == null || ['send', 'drop'].includes(beforeEnqueueOnError),
+      "beforeEnqueueOnError must be 'send' or 'drop'.",
+    );
 
     this.queue = [];
     // Running byte size of the queue, so enqueue() doesn't re-serialize every
@@ -229,6 +246,9 @@ class Analytics {
     });
 
     this.logger = new Logger(LOG_LEVEL_MAP[this.logLevel]);
+
+    this.beforeEnqueue = beforeEnqueue || undefined;
+    this.beforeEnqueueOnError = beforeEnqueueOnError || 'send';
 
     if (retryCount !== 0) {
       axiosRetry(this.axiosInstance, {
@@ -537,15 +557,16 @@ class Analytics {
     };
   }
 
-  _validate(message, type) {
+  _validate(message, type, afterHook = false) {
+    // With a hook, its result is validated instead (see _beforeEnqueue())
+    if (this.beforeEnqueue && !afterHook) {
+      return;
+    }
     try {
       looselyValidate(message, type);
     } catch (e) {
-      if (e.message === 'Your message must be < 32kb.') {
-        this.logger.info(
-          'Your message must be < 32kb. This is currently surfaced as a warning. Please update your code',
-          message,
-        );
+      if (e.message === SIZE_ERROR) {
+        this.logger.info(SIZE_WARNING, message);
         return;
       }
       throw e;
@@ -741,6 +762,14 @@ class Analytics {
       lMessage.userId = JSON.stringify(lMessage.userId);
     }
 
+    if (this.beforeEnqueue) {
+      lMessage = this._beforeEnqueue(type, lMessage);
+      if (lMessage === null) {
+        setImmediate(callback);
+        return;
+      }
+    }
+
     const item = { message: lMessage, callback };
     const itemBytes = this._measureItemBytes(item);
     this.queue.push(item);
@@ -763,6 +792,58 @@ class Analytics {
     }
 
     this.setupFlushTimer();
+  }
+
+  /**
+   * Run `beforeEnqueue` on a copy of the enriched `message`. Returns the event to queue, or
+   * null to drop it. Hook errors follow `beforeEnqueueOnError` and never leave the SDK.
+   *
+   * @param {String} type
+   * @param {Object} message
+   * @api private
+   */
+  _beforeEnqueue(type, message) {
+    let event;
+    try {
+      event = this.beforeEnqueue(cloneDeep(message));
+      if (event === null) {
+        this.logger.debug(`beforeEnqueue dropped ${type} event ${message.messageId}`);
+        return null;
+      }
+      if (typeof event?.then === 'function') {
+        event.then(noop, noop); // A rejected async hook must not crash the process
+        throw new Error('beforeEnqueue must be synchronous; it returned a Promise.');
+      }
+      assert(
+        componentType(event) === 'object',
+        'beforeEnqueue must return an event object or null.',
+      );
+      // Same validation as the call itself; computing the size also rejects cycles
+      this._validate(event, event.type, true); // The hook may change the type
+      const { channel } = message;
+      const { library } = message.context;
+      if (
+        !isDeepStrictEqual(event.channel, channel) ||
+        !isDeepStrictEqual(event.context?.library, library)
+      ) {
+        this.logger.warn('beforeEnqueue changed channel or context.library; they were restored.');
+      }
+      event.channel = channel;
+      event.context = { ...event.context, library };
+      if (!event.messageId) {
+        event.messageId = message.messageId;
+      }
+    } catch (err) {
+      const failed = `beforeEnqueue failed for ${type} event ${message.messageId}`;
+      if (this.beforeEnqueueOnError === 'drop') {
+        this.logger.error(`${failed}, dropping the event. ${err}`);
+        return null;
+      }
+      this.logger.error(`${failed}, sending the original event. ${err}`);
+      this._validate(message, type, true);
+      return message;
+    }
+    return event;
   }
 
   /**

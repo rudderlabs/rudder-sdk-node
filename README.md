@@ -78,6 +78,33 @@ Below parameters are optional and can be passed during SDK initialization.
 | `retryCount`           | Number   | 3                               | Number of times requests will be retried by axios if failed                                       |
 | `errorHandler`         | Function | N/A                             | Called when a server request or persistent-queue add fails; without it, the latter is only logged |
 | `gzip`                 | Boolean  | true                            | Whether to compress request with gzip or not                                                      |
+| `beforeEnqueue`        | Function | N/A                             | Edits or drops each event before it is queued. See [Before-enqueue hook](#before-enqueue-hook)    |
+| `beforeEnqueueOnError` | String   | 'send'                          | `'send'` the original event or `'drop'` it when `beforeEnqueue` fails                             |
+
+## Before-enqueue hook
+
+`beforeEnqueue` runs synchronously once per event, after the SDK adds `messageId`, `originalTimestamp`, `context` and `channel`, and before the event is queued. It gets its own copy of the event. Return the event, edited or not, to send it, or `null` to drop it. A dropped event still calls the callback, without an error. The hook must be synchronous, and it does not run again for retries or persistent-queue replays.
+
+```js
+const client = new Analytics(WRITE_KEY, {
+  dataPlaneUrl: DATA_PLANE_URL,
+  beforeEnqueue: (event) => {
+    // Drop events from internal test accounts
+    if (typeof event.userId === 'string' && event.userId.startsWith('test-')) return null;
+    // Strip the email before it leaves the process
+    for (const traits of [event.traits, event.context?.traits]) {
+      if (traits && typeof traits === 'object') delete traits.email;
+    }
+    return event;
+  },
+  // The hook redacts PII, so never fall back to the unredacted original
+  beforeEnqueueOnError: 'drop',
+});
+```
+
+If the hook throws, returns anything other than an event or `null`, or returns an event that fails the call's validation (for example, no `userId` or `anonymousId`), the SDK logs the error and sends the original event, or drops it with `beforeEnqueueOnError: 'drop'`. An event of 32KB or larger is sent with the usual size warning, as without a hook.
+
+The hook may change `messageId`; the changed value is kept. If it is missing or empty, the original is restored without a warning. Changes to `channel` and `context.library` are reverted with one warning. A non-function `beforeEnqueue` or a `beforeEnqueueOnError` other than `'send'` or `'drop'` throws when the client is created.
 
 Retry hooks in `axiosRetryConfig` receive credential-redacted error and request snapshots.
 The snapshots omit authentication, raw requests, agents, functions, and other live transport objects.
