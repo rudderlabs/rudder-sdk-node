@@ -167,7 +167,32 @@ test('changed messageId is kept; missing or empty messageId is restored silently
   }
 });
 
-test('oversized result is sent with the usual size warning and message', async (t) => {
+for (const policy of ['send', 'drop']) {
+  test(`oversized result missing a required field follows ${policy} policy`, async (t) => {
+    const { client, post } = createClient(t, {
+      beforeEnqueueOnError: policy,
+      beforeEnqueue: (e) => {
+        delete e.event;
+        e.properties = { blob: 'x'.repeat(33 * 1024) };
+        return e;
+      },
+    });
+    client.track(input());
+    await client.flush();
+    t.is(post.callCount, policy === 'send' ? 1 : 0);
+    if (policy === 'send') t.like(sent(post), input());
+    const outcome = policy === 'send' ? 'sending the original event' : 'dropping the event';
+    t.true(client.logger.error.calledOnce);
+    t.true(
+      client.logger.error.firstCall.args[0].includes(
+        `beforeEnqueue failed for track event m1, ${outcome}.`,
+      ),
+    );
+    t.true(client.logger.error.firstCall.args[0].includes('You must pass an "event".'));
+  });
+}
+
+test('oversized valid result is sent with the usual size warning and message', async (t) => {
   const { client, post } = createClient(t, {
     beforeEnqueue: (e) => ({ ...e, properties: { blob: 'x'.repeat(33 * 1024) } }),
   });
@@ -176,6 +201,49 @@ test('oversized result is sent with the usual size warning and message', async (
   t.true(client.logger.info.calledOnceWithExactly(SIZE_WARNING, queued));
   await client.flush();
   t.is(sent(post).properties.blob.length, 33 * 1024);
+  t.false(client.logger.error.called);
+});
+
+for (const change of [{ type: 'unknown' }, { event: 42 }]) {
+  test(`oversized result with invalid ${Object.keys(change)[0]} is a hook error`, async (t) => {
+    const { client, post } = createClient(t, {
+      beforeEnqueueOnError: 'drop',
+      beforeEnqueue: (e) => ({ ...e, ...change, properties: { blob: 'x'.repeat(33 * 1024) } }),
+    });
+    client.track(input());
+    await client.flush();
+    t.false(post.called);
+    t.true(client.logger.error.calledOnce);
+  });
+}
+
+test('send fallback throws for an oversized original missing a required field', (t) => {
+  const { client } = createClient(t, { beforeEnqueue: () => 42 });
+  t.throws(() => client.track({ userId: 'u1', properties: { blob: 'x'.repeat(33 * 1024) } }), {
+    message: 'You must pass an "event".',
+  });
+  t.is(client.queue.length, 0);
+  t.true(client.logger.error.calledOnce);
+});
+
+test('send fallback warns and sends an oversized valid original', async (t) => {
+  const { client, post } = createClient(t, { beforeEnqueue: () => 42 });
+  const message = { ...input(), properties: { blob: 'x'.repeat(33 * 1024) } };
+  client.track(message);
+  t.true(client.logger.info.calledOnceWithExactly(SIZE_WARNING, client.queue[0].message));
+  await client.flush();
+  t.like(sent(post), message);
+  t.true(client.logger.error.calledOnce);
+});
+
+test('without a hook, an oversized invalid event is warned and sent unchanged', async (t) => {
+  const { client, post } = createClient(t);
+  const message = { userId: 'u1', messageId: 'm1', properties: { blob: 'x'.repeat(33 * 1024) } };
+  t.notThrows(() => client.track(message));
+  t.true(client.logger.info.calledOnceWithExactly(SIZE_WARNING, message));
+  await client.flush();
+  t.like(sent(post), message);
+  t.is(sent(post).event, undefined);
   t.false(client.logger.error.called);
 });
 
