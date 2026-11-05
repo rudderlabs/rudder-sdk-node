@@ -562,11 +562,15 @@ class Analytics {
     if (this.beforeEnqueue && !afterHook) {
       return;
     }
+    this._validateMessage(message, type, afterHook);
+  }
+
+  _validateMessage(message, type, afterHook = false) {
     try {
       looselyValidate(message, type);
     } catch (e) {
       if (e.message === SIZE_ERROR) {
-        // Retry without size so oversized hook results and fallbacks still get every other check.
+        // Retry without size so oversized hook results still get every other check.
         if (afterHook) looselyValidate(message, type, { skipSize: true });
         this.logger.info(SIZE_WARNING, message);
         return;
@@ -765,7 +769,7 @@ class Analytics {
     }
 
     if (this.beforeEnqueue) {
-      lMessage = this._beforeEnqueue(type, lMessage);
+      lMessage = this._beforeEnqueue(type, lMessage, message);
       if (lMessage === null) {
         setImmediate(callback);
         return;
@@ -802,9 +806,10 @@ class Analytics {
    *
    * @param {String} type
    * @param {Object} message
+   * @param {Object} rawMessage
    * @api private
    */
-  _beforeEnqueue(type, message) {
+  _beforeEnqueue(type, message, rawMessage) {
     let event;
     try {
       event = this.beforeEnqueue(cloneDeep(message));
@@ -842,7 +847,7 @@ class Analytics {
         return null;
       }
       this.logger.error(`${failed}, sending the original event. ${err}`);
-      this._validate(message, type, true);
+      this._validateMessage(rawMessage, type);
       return message;
     }
     return event;

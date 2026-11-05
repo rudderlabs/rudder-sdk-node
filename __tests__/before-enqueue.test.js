@@ -71,7 +71,8 @@ for (const policy of ['send', 'drop']) {
   test(`throw follows ${policy} policy`, async (t) => {
     const { client, post, errorHandler } = createClient(t, {
       beforeEnqueueOnError: policy,
-      beforeEnqueue: () => {
+      beforeEnqueue: (e) => {
+        e.properties.total = 99;
         throw new Error('boom');
       },
     });
@@ -91,6 +92,42 @@ for (const policy of ['send', 'drop']) {
     t.false(errorHandler.called);
   });
 }
+
+test('send fallback rejects raw input with the same error as no hook', (t) => {
+  const plain = createClient(t);
+  const { client } = createClient(t, {
+    beforeEnqueueOnError: 'send',
+    beforeEnqueue: () => {
+      throw new Error('boom');
+    },
+  });
+  const message = { userId: {}, event: 'Order' };
+  const expected = t.throws(() => plain.client.track(message));
+  const actual = t.throws(() => client.track(message));
+  t.is(actual.constructor, expected.constructor);
+  t.is(actual.message, expected.message);
+  t.is(actual.code, expected.code);
+  t.is(client.queue.length, 0);
+  t.true(client.logger.error.calledOnce);
+});
+
+test('throwing hook still drops invalid raw input under drop policy', async (t) => {
+  const { client, post, errorHandler } = createClient(t, {
+    beforeEnqueueOnError: 'drop',
+    beforeEnqueue: () => {
+      throw new Error('boom');
+    },
+  });
+  const callback = spy();
+  t.notThrows(() => client.track({ userId: {}, event: 'Order' }, callback));
+  await client.flush();
+  await nextTurn();
+  t.is(client.queue.length, 0);
+  t.false(post.called);
+  t.true(callback.calledOnceWithExactly());
+  t.true(client.logger.error.calledOnce);
+  t.false(errorHandler.called);
+});
 
 test('non-object result is a hook error', async (t) => {
   const { client, post, errorHandler } = createClient(t, { beforeEnqueue: () => 42 });
@@ -217,12 +254,14 @@ for (const change of [{ type: 'unknown' }, { event: 42 }]) {
   });
 }
 
-test('send fallback throws for an oversized original missing a required field', (t) => {
-  const { client } = createClient(t, { beforeEnqueue: () => 42 });
-  t.throws(() => client.track({ userId: 'u1', properties: { blob: 'x'.repeat(33 * 1024) } }), {
-    message: 'You must pass an "event".',
-  });
-  t.is(client.queue.length, 0);
+test('send fallback warns and sends an oversized original missing a required field', async (t) => {
+  const { client, post } = createClient(t, { beforeEnqueue: () => 42 });
+  const message = { userId: 'u1', properties: { blob: 'x'.repeat(33 * 1024) } };
+  t.notThrows(() => client.track(message));
+  t.true(client.logger.info.calledOnceWithExactly(SIZE_WARNING, message));
+  await client.flush();
+  t.like(sent(post), message);
+  t.is(sent(post).event, undefined);
   t.true(client.logger.error.calledOnce);
 });
 
@@ -230,7 +269,7 @@ test('send fallback warns and sends an oversized valid original', async (t) => {
   const { client, post } = createClient(t, { beforeEnqueue: () => 42 });
   const message = { ...input(), properties: { blob: 'x'.repeat(33 * 1024) } };
   client.track(message);
-  t.true(client.logger.info.calledOnceWithExactly(SIZE_WARNING, client.queue[0].message));
+  t.true(client.logger.info.calledOnceWithExactly(SIZE_WARNING, message));
   await client.flush();
   t.like(sent(post), message);
   t.true(client.logger.error.calledOnce);
