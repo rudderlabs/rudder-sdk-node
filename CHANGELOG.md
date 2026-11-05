@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.1.1](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.1.0...v3.1.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **before-enqueue:** validate oversized hook results fully ([#517](https://github.com/rudderlabs/rudder-sdk-node/issues/517)) ([a1f021b](https://github.com/rudderlabs/rudder-sdk-node/commit/a1f021b1f78d94c0e6f10bebfb08b7d0c7126b56))
+* **before-enqueue:** validate send-fallback originals like no-hook calls ([#519](https://github.com/rudderlabs/rudder-sdk-node/issues/519)) ([c2493cb](https://github.com/rudderlabs/rudder-sdk-node/commit/c2493cba1a5a09118d2f416c297da415afead1ec))
+
 ## [3.1.0](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.0.18...v3.1.0) (2026-11-04)
 
 
