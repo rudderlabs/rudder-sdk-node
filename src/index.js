@@ -566,6 +566,8 @@ class Analytics {
       looselyValidate(message, type);
     } catch (e) {
       if (e.message === SIZE_ERROR) {
+        // Retry without size so oversized hook results and fallbacks still get every other check.
+        if (afterHook) looselyValidate(message, type, { skipSize: true });
         this.logger.info(SIZE_WARNING, message);
         return;
       }
