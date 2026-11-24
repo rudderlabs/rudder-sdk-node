@@ -48,6 +48,13 @@
     "setup": "npm install",
     "test:sample": "npm run package && cd examples/sample-app && npm run test:local"
   },
+  "nyc": {
+    "check-coverage": true,
+    "statements": 78,
+    "branches": 78,
+    "functions": 76,
+    "lines": 79
+  },
   "engines": {
     "node": ">=16.13.0"
   },
