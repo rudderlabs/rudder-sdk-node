@@ -6,7 +6,7 @@ unit, type, and Deno checks. They do not dispatch central reliability tests.
 
 The caller does not check out or execute PR code. It creates an App token scoped
 to central Actions and invokes the shared action at
-`2d1262f86e519195dc723a8d244a8ecc8bcedb21`. Fork and Dependabot events are excluded before token creation.
+`e9cb787ee60ad7cd9ade4c6b819e5d17b4d093a1`. Fork and Dependabot events are excluded before token creation.
 The `release-please--` prefix selects when the check runs; it does not grant
 trust to candidate code. Central prepares the exact merge candidate in an
 isolated container and checks current PR identity before and after testing.
