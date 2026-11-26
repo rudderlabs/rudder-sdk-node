@@ -4,6 +4,8 @@ const assert = require('assert');
 
 // RudderStack messages can be a maximum of 32kb.
 const MAX_SIZE = 32 * 1024;
+const SENT_AT_SAMPLE = new Date(0);
+const SENT_AT_FIELD_BYTES = Buffer.byteLength(`,"sentAt":${JSON.stringify(SENT_AT_SAMPLE)}`);
 
 /**
  * Validate a "track" event.
@@ -81,7 +83,8 @@ const genericValidationRules = {
 function validateGenericEvent(event, skipSize) {
   assert(type(event) === 'object', 'You must pass a message object.');
   if (!skipSize) {
-    const json = JSON.stringify(event);
+    // Flush writes sentAt on every event. An ISO timestamp uses the same bytes as this sample.
+    const json = JSON.stringify({ ...event, sentAt: SENT_AT_SAMPLE });
     // Strings are variable byte encoded, so json.length is not sufficient.
     assert(Buffer.byteLength(json, 'utf8') < MAX_SIZE, 'Your message must be < 32kb.');
   }
@@ -126,3 +129,4 @@ function looselyValidateEvent(event, evType, { skipSize = false } = {}) {
 }
 
 module.exports = looselyValidateEvent;
+module.exports.SENT_AT_FIELD_BYTES = SENT_AT_FIELD_BYTES;

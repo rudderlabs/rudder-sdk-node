@@ -24,7 +24,7 @@ const JOB_DATA_VERSION = 3;
 // Bytes flush() adds to the request after an event is queued: `,"sentAt":"<ISO date>"`
 // on each event plus the comma between events, and the batch envelope around them.
 // Counted so batches are sized as they are sent.
-const EVENT_SENT_AT_BYTES = Buffer.byteLength(`,"sentAt":${JSON.stringify(new Date(0))}`) + 1;
+const BATCH_EVENT_OVERHEAD_BYTES = looselyValidate.SENT_AT_FIELD_BYTES + 1;
 const BATCH_ENVELOPE_BYTES = Buffer.byteLength(
   JSON.stringify({ batch: [], timestamp: new Date(0), sentAt: new Date(0) }),
 );
@@ -875,7 +875,8 @@ class Analytics {
   _measureItemBytes(item) {
     const json = JSON.stringify(item.message);
     // undefined is serialized as null inside the batch array
-    return Buffer.byteLength(json === undefined ? 'null' : json, 'utf8') + EVENT_SENT_AT_BYTES;
+    const bytes = Buffer.byteLength(json === undefined ? 'null' : json, 'utf8');
+    return bytes + BATCH_EVENT_OVERHEAD_BYTES;
   }
 
   /**

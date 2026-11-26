@@ -286,6 +286,41 @@ test('without a hook, an oversized invalid event is warned and sent unchanged', 
   t.false(client.logger.error.called);
 });
 
+for (const [mode, beforeEnqueue] of [
+  ['without a hook', undefined],
+  ['with a hook', (event) => event],
+  ['with a send fallback', () => 42],
+]) {
+  test(`size warning includes the per-event sentAt ${mode}`, async (t) => {
+    const { client, post } = createClient(t, { beforeEnqueue });
+    const maxBytes = 32 * 1024;
+    const message = {
+      ...input(),
+      type: 'track',
+      channel: 'server',
+      context: { library },
+      _metadata: { nodeVersion: process.versions.node },
+      originalTimestamp: new Date(0),
+      properties: { blob: '' },
+    };
+    const baseBytes = Buffer.byteLength(JSON.stringify({ ...message, sentAt: new Date(0) }));
+    const underLimit = { ...message, properties: { blob: 'x'.repeat(maxBytes - baseBytes - 1) } };
+
+    client.track(underLimit);
+    client.track({ ...underLimit, sentAt: new Date(0) });
+    t.false(client.logger.info.called);
+
+    client.track({ ...message, properties: { blob: 'x'.repeat(maxBytes - baseBytes) } });
+    t.true(client.logger.info.calledOnceWith(SIZE_WARNING));
+
+    await client.flush();
+    t.deepEqual(
+      post.firstCall.args[1].batch.map((event) => Buffer.byteLength(JSON.stringify(event))),
+      [maxBytes - 1, maxBytes - 1, maxBytes],
+    );
+  });
+}
+
 test('hook runs once across HTTP retries', async (t) => {
   const hook = spy((e) => e);
   const { client, post } = createClient(t, {
