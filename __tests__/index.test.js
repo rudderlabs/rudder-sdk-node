@@ -5,7 +5,7 @@ const auth = require('basic-auth');
 const bodyParser = require('body-parser');
 const { default: test } = require('ava');
 const Sinon = require('sinon');
-const { setTimeout } = require('node:timers/promises');
+const { setImmediate: nextTurn, setTimeout } = require('node:timers/promises');
 const { AssertionError } = require('assert');
 const { inspect } = require('node:util');
 
@@ -360,6 +360,33 @@ test('enqueue - extend context', async (t) => {
   const expectedContext = { ...context, name: 'travis' };
 
   t.deepEqual(actualContext, expectedContext);
+});
+
+test('track reports a full queue to the dropped event callback asynchronously', async (t) => {
+  const client = await createClient({ maxInternalQueueSize: 1, flushInterval: 60_000 });
+  const post = stub(client.axiosInstance, 'post').resolves({ status: 200 });
+  const queuedCallback = spy();
+  const droppedCallback = spy();
+  client.track({ userId: 'user', event: 'Queued' }, queuedCallback);
+  t.is(client.track({ userId: 'user', event: 'Dropped' }, droppedCallback), client);
+  t.notThrows(() => client.track({ userId: 'user', event: 'Dropped without a callback' }));
+  t.false(droppedCallback.called);
+
+  await nextTurn();
+  t.true(droppedCallback.calledOnce);
+  const [error] = droppedCallback.firstCall.args;
+  t.true(error instanceof Error);
+  t.regex(error.message, /queue size/);
+  t.false(queuedCallback.called);
+
+  await client.flush();
+  t.deepEqual(
+    post.firstCall.args[1].batch.map(({ event }) => event),
+    ['Queued'],
+  );
+  t.true(queuedCallback.calledOnce);
+  t.is(queuedCallback.firstCall.args[0], undefined);
+  t.true(droppedCallback.calledOnce);
 });
 
 test('enqueue - skip when client is disabled', async (t) => {
