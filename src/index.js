@@ -712,9 +712,13 @@ class Analytics {
 
   enqueue(type, message, callback) {
     if (this.queue.length >= this.maxInternalQueueSize) {
-      this.logger.error(
+      const error = new Error(
         `not adding events for processing as queue size ${this.queue.length} >= than max configuration ${this.maxInternalQueueSize}`,
       );
+      this.logger.error(error.message);
+      if (typeof callback === 'function') {
+        setImmediate(callback, error);
+      }
       return;
     }
     // Clone the incoming message object
