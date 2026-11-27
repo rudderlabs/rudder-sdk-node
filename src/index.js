@@ -877,7 +877,7 @@ class Analytics {
   _measureItemBytes(item) {
     const json = JSON.stringify(item.message);
     // undefined is serialized as null inside the batch array
-    const bytes = Buffer.byteLength(json === undefined ? 'null' : json, 'utf8');
+    const bytes = Buffer.byteLength(json ?? 'null', 'utf8');
     return bytes + BATCH_EVENT_OVERHEAD_BYTES;
   }
 
