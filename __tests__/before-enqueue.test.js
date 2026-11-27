@@ -288,6 +288,22 @@ test('without a hook, an oversized invalid event is warned and sent unchanged', 
 
 for (const [mode, beforeEnqueue] of [
   ['without a hook', undefined],
+  ['with a send fallback', () => 42],
+]) {
+  test(`an invalid event still fails validation when only sentAt pushes it over the limit ${mode}`, async (t) => {
+    const { client, post } = createClient(t, { beforeEnqueue });
+    const message = { userId: 'u1', properties: { blob: '' } };
+    const sizeWithSentAt = Buffer.byteLength(JSON.stringify({ ...message, sentAt: new Date(0) }));
+    message.properties.blob = 'x'.repeat(32 * 1024 - sizeWithSentAt);
+
+    t.throws(() => client.track(message), { message: 'You must pass an "event".' });
+    await client.flush();
+    t.false(post.called);
+  });
+}
+
+for (const [mode, beforeEnqueue] of [
+  ['without a hook', undefined],
   ['with a hook', (event) => event],
   ['with a send fallback', () => 42],
 ]) {

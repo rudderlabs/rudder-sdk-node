@@ -570,8 +570,10 @@ class Analytics {
       looselyValidate(message, type);
     } catch (e) {
       if (e.message === SIZE_ERROR) {
-        // Retry without size so oversized hook results still get every other check.
-        if (afterHook) looselyValidate(message, type, { skipSize: true });
+        // Only events already oversized before flush can use the legacy validation shortcut.
+        if (afterHook || !looselyValidate.isOversizedBeforeFlush(message)) {
+          looselyValidate(message, type, { skipSize: true });
+        }
         this.logger.info(SIZE_WARNING, message);
         return;
       }

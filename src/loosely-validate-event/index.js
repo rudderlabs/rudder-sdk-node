@@ -130,3 +130,5 @@ function looselyValidateEvent(event, evType, { skipSize = false } = {}) {
 
 module.exports = looselyValidateEvent;
 module.exports.SENT_AT_FIELD_BYTES = SENT_AT_FIELD_BYTES;
+module.exports.isOversizedBeforeFlush = (event) =>
+  Buffer.byteLength(JSON.stringify(event), 'utf8') >= MAX_SIZE;
