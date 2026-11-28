@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [Conventional Commits](https://www.conventionalcommits.org) for commit guidelines.
 
+## [3.1.2](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.1.1...v3.1.2) (2026-11-28)
+
+
+### Bug Fixes
+
+* **deps:** remove vulnerable zod browser-timing dependency chain ([#527](https://github.com/rudderlabs/rudder-sdk-node/issues/527)) ([19278b5](https://github.com/rudderlabs/rudder-sdk-node/commit/19278b5d90a411f736007495b5dc568b2ab59d9d))
+* include sentat in the event size check ([#525](https://github.com/rudderlabs/rudder-sdk-node/issues/525)) ([2ae6a79](https://github.com/rudderlabs/rudder-sdk-node/commit/2ae6a7979b43f27c662383dd0a37839562800faa))
+* report full queue drops to event callbacks ([#524](https://github.com/rudderlabs/rudder-sdk-node/issues/524)) ([752031d](https://github.com/rudderlabs/rudder-sdk-node/commit/752031d5ada57e4782e70088792659298d144d00))
+
+
+### Miscellaneous
+
+* **deps-dev:** bump tmp to 0.2.7 ([#526](https://github.com/rudderlabs/rudder-sdk-node/issues/526)) ([dd34e87](https://github.com/rudderlabs/rudder-sdk-node/commit/dd34e87c1efb3d879e8c3df49f5ede891f6991ff))
+* **deps-dev:** override get-uri basic-ftp to 6.2.4 ([#522](https://github.com/rudderlabs/rudder-sdk-node/issues/522)) ([94a6c98](https://github.com/rudderlabs/rudder-sdk-node/commit/94a6c98eb37909ee31c392309bc15c8aa4f9b460))
+* enforce a minimum unit test coverage ([#520](https://github.com/rudderlabs/rudder-sdk-node/issues/520)) ([a3cc1fa](https://github.com/rudderlabs/rudder-sdk-node/commit/a3cc1fa271c454e90ad8b4dbb57efd076b37fa61))
+* update e2e action pin ([#523](https://github.com/rudderlabs/rudder-sdk-node/issues/523)) ([5a4e7dc](https://github.com/rudderlabs/rudder-sdk-node/commit/5a4e7dc04667d695faf58e4c4236f81909271658))
+
 ## [3.1.1](https://github.com/rudderlabs/rudder-sdk-node/compare/v3.1.0...v3.1.1) (2026-11-05)
 
 
